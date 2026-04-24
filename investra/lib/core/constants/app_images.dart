@@ -1,0 +1,45 @@
+abstract class AppImages {
+  static const String joinInvestra = 'assets/images/join_investra.svg';
+  static const String profile = 'assets/images/profile.png';
+  static const String technology = 'assets/images/technology.png';
+  static const String verifiedBadge = 'assets/images/Verified_Badge.png';
+  static const String applogo = 'assets/images/App_logo.png';
+  static const String logo = 'assets/images/logo22.png';
+
+  static const String logoSvg = 'assets/icons/logo22Svg.svg';
+  static const String appLogoSvg = 'assets/icons/App_logoSvg.svg';
+  static const String linkedinSvg = 'assets/icons/Linkedin.svg';
+  static const String googleSvg = 'assets/icons/google_svg.svg';
+  static const String backSvg = 'assets/icons/back_svg.svg';
+  static const String addSvg = 'assets/icons/add.svg';
+  static const String aichatbotSvg = 'assets/icons/ai_chatbot.svg';
+  static const String appearanceSvg = 'assets/icons/appearance.svg';
+  static const String documentSvg = 'assets/icons/Document.svg';
+  static const String downSvg = 'assets/icons/down.svg';
+  static const String ecoStreamSvg = 'assets/icons/ecoStream.svg';
+  static const String editSvg = 'assets/icons/edit.svg';
+  static const String goSvg = 'assets/icons/go.svg';
+  static const String helpSvg = 'assets/icons/help.svg';
+  static const String homeSvg = 'assets/icons/home.svg';
+  static const String ideaSvg = 'assets/icons/idea.svg';
+  static const String idea2Svg = 'assets/icons/idea2.svg';
+  static const String infoOutlineSvg = 'assets/icons/info_outline.svg';
+  static const String lockSvg = 'assets/icons/lock.svg';
+  static const String logoutSvg = 'assets/icons/logout.svg';
+  static const String memdersSvg = 'assets/icons/memders.svg';
+  static const String messegeSvg = 'assets/icons/messege.svg';
+  static const String notificationSvg = 'assets/icons/notification.svg';
+  static const String notification2Svg = 'assets/icons/notification2.svg';
+  static const String passwordSvg = 'assets/icons/password.svg';
+  static const String profileSvg = 'assets/icons/profile.svg';
+  static const String rocketSvg = 'assets/icons/rocket.svg';
+  static const String searchSvg = 'assets/icons/search.svg';
+  static const String securitySvg = 'assets/icons/security.svg';
+  static const String sendSvg = 'assets/icons/send.svg';
+  static const String settingSvg = 'assets/icons/setting.svg';
+  static const String smartPackSvg = 'assets/icons/smartPack.svg';
+  static const String verifiedSvg = 'assets/icons/Verified.svg';
+  static const String videoSvg = 'assets/icons/video.svg';
+  static const String warningSvg = 'assets/icons/warning.svg';
+  static const String powerSvg = 'assets/icons/power.svg';
+}
