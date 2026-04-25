@@ -148,7 +148,6 @@ Widget _buildSettingsToggle({
       trailing: Switch(
         value: value,
         onChanged: (v) {},
-        activeThumbColor: AppColors.primaryColor,
       ),
     ),
   );
