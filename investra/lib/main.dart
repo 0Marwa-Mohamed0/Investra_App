@@ -1,10 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'splash_screen.dart';
 
-void main() {
+Future<void> main() async {
+  // التأكد من تهيئة أدوات Flutter قبل أي عملية أخرى
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // supabase with investra
+  await Supabase.initialize(
+    url: 'https://eruuwckhnkisegwirxzj.supabase.co',
+    anonKey: 'sb_publishable_M8lhYOIXog8c-bf0p8gCDQ_B-APa-Ih',
+  );
+  print("تم الاتصال بنجاح بـ Investra!");
+
   runApp(const InvestraApp());
 }
-
 class InvestraApp extends StatelessWidget {
   const InvestraApp({super.key});
 

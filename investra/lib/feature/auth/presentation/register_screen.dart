@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:gap/gap.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'login_screen.dart';
 
 class RegistrationScreen extends StatefulWidget {
@@ -12,6 +13,92 @@ class RegistrationScreen extends StatefulWidget {
 
 class _RegistrationScreenState extends State<RegistrationScreen> {
   String selectedType = "Investor";
+  final _nameController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  bool _isLoading = false;
+  bool _obscurePassword = true;
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _signUp() async {
+    final name = _nameController.text.trim();
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+
+    if (name.isEmpty || email.isEmpty || password.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please fill in all fields')),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      final response = await Supabase.instance.client.auth.signUp(
+        email: email,
+        password: password,
+        data: {
+          'full_name': name,
+          'user_type': selectedType,
+        },
+      );
+
+      if (mounted) {
+        if (response.user != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Registration successful! Please check your email for confirmation.'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const LoginScreen()),
+          );
+        }
+      }
+    } on AuthException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.message), backgroundColor: Colors.red),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $error'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _signInWithOAuth(OAuthProvider provider) async {
+    setState(() => _isLoading = true);
+    try {
+      await Supabase.instance.client.auth.signInWithOAuth(
+        provider,
+        redirectTo: 'io.supabase.flutter://login-callback',
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $error'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -34,52 +121,56 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
         centerTitle: true,
       ),
       body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            return SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
-              padding: const EdgeInsets.symmetric(horizontal: 24.0),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                child: IntrinsicHeight(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const Gap(15), 
-                      _buildHeroImage(isSmallScreen),
-                      const Gap(25),
-                      const Text(
-                        "Account Type",
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.grey),
-                      ),
-                      const Gap(10),
-                      _buildAccountTypeToggle(),
-                      const Gap(25),
-                      _buildInputField("Full Name", "John Doe", Icons.person_outline, isSmallScreen),
-                      _buildInputField("Email Address", "john@example.com", Icons.email_outlined, isSmallScreen),
-                      _buildInputField("Password", "********", Icons.lock_outline, isSmallScreen, isPass: true),
-                      const Gap(15), 
-                      ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF1E4D7B),
-                          minimumSize: const Size(double.infinity, 55),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                          elevation: 0,
-                        ),
-                        onPressed: () {},
-                        child: const Text("Create My Account", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                      ),
-                      const Gap(10),
-                      _buildLoginLink(context),
-                      const Spacer(),
-                      _buildSocialAuthRow(isSmallScreen),
-                      const Gap(20),
-                    ],
-                  ),
-                ),
+        child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          padding: const EdgeInsets.symmetric(horizontal: 24.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Gap(15),
+              _buildHeroImage(isSmallScreen),
+              const Gap(25),
+              const Text(
+                "Account Type",
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.grey),
               ),
-            );
-          }
+              const Gap(10),
+              _buildAccountTypeToggle(),
+              const Gap(25),
+              _buildInputField("Full Name", "John Doe", Icons.person_outline, isSmallScreen, _nameController),
+              _buildInputField("Email Address", "john@example.com", Icons.email_outlined, isSmallScreen, _emailController),
+              _buildInputField(
+                "Password",
+                "********",
+                Icons.lock_outline,
+                isSmallScreen,
+                _passwordController,
+                isPass: _obscurePassword,
+                onToggleVisibility: () => setState(() => _obscurePassword = !_obscurePassword),
+              ),
+              const Gap(15),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1E4D7B),
+                  minimumSize: const Size(double.infinity, 55),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                  elevation: 0,
+                ),
+                onPressed: _isLoading ? null : _signUp,
+                child: _isLoading
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : const Text("Create My Account", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+              ),
+              const Gap(15),
+              _buildLoginLink(context),
+              const Gap(40),
+              _buildSocialAuthRow(isSmallScreen),
+              const Gap(20),
+            ],
+          ),
         ),
       ),
     );
@@ -150,7 +241,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     );
   }
 
-  Widget _buildInputField(String label, String hint, IconData icon, bool isSmall, {bool isPass = false}) => Padding(
+  Widget _buildInputField(String label, String hint, IconData icon, bool isSmall, TextEditingController controller, {bool isPass = false, VoidCallback? onToggleVisibility}) => Padding(
     padding: EdgeInsets.only(bottom: isSmall ? 10 : 15),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -158,6 +249,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
         Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF1E4D7B))),
         const Gap(6),
         TextField(
+          controller: controller,
           obscureText: isPass,
           style: const TextStyle(fontSize: 14),
           decoration: InputDecoration(
@@ -169,7 +261,16 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
             contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
             enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFF1F4F8))),
-            suffixIcon: isPass ? const Icon(Icons.visibility_off_outlined, color: Colors.grey, size: 18) : null,
+            suffixIcon: onToggleVisibility != null 
+              ? IconButton(
+                  icon: Icon(
+                    isPass ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                    color: Colors.grey, 
+                    size: 18
+                  ),
+                  onPressed: onToggleVisibility,
+                )
+              : null,
           ),
         ),
       ],
@@ -202,26 +303,28 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       Gap(isSmall ? 10 : 15),
       Row(
         children: [
-          Expanded(child: _socialBtn("Google", 'assets/icons/google_svg.svg')),
+          Expanded(child: _socialBtn("Google", 'assets/icons/google_svg.svg', OAuthProvider.google)),
           const Gap(15),
-          Expanded(child: _socialBtn("LinkedIn", 'assets/icons/Linkedin.svg')),
+          Expanded(child: _socialBtn("LinkedIn", 'assets/icons/linkedIn.svg', OAuthProvider.linkedin)),
         ],
       ),
     ],
   );
 
-  Widget _socialBtn(String label, String iconPath) => OutlinedButton(
+  Widget _socialBtn(String label, String iconPath, OAuthProvider provider) => OutlinedButton(
     style: OutlinedButton.styleFrom(
       padding: const EdgeInsets.symmetric(vertical: 12), 
       side: const BorderSide(color: Color(0xFFF1F4F8)),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       backgroundColor: const Color(0xFFF8F9FB),
     ),
-    onPressed: () {},
+    onPressed: () => _signInWithOAuth(provider),
     child: Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        SvgPicture.asset(iconPath, width: 18),
+        iconPath.endsWith('.svg') 
+          ? SvgPicture.asset(iconPath, width: 18)
+          : Image.asset(iconPath, width: 18),
         const Gap(8),
         Text(label, style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 13)),
       ],
