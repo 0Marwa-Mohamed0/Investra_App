@@ -6,7 +6,7 @@ void main() {
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({Key? key}) : super(key: key);
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -24,7 +24,7 @@ class MyApp extends StatelessWidget {
 }
 
 class AccountProfilePage extends StatefulWidget {
-  const AccountProfilePage({Key? key}) : super(key: key);
+  const AccountProfilePage({super.key});
 
   @override
   State<AccountProfilePage> createState() => _AccountProfilePageState();
@@ -142,7 +142,7 @@ class _AccountProfilePageState extends State<AccountProfilePage> {
                       ),
                       trailing: Switch(
                         value: notificationsEnabled,
-                        activeColor: Colors.green,
+                        activeThumbColor: Colors.green,
                         onChanged: (value) {
                           setState(() {
                             notificationsEnabled = value;

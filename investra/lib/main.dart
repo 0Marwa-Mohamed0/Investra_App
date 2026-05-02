@@ -1,16 +1,33 @@
 import 'package:flutter/material.dart';
-import 'package:investra/feature/profile/setting/screen/entrepreneur_setting_screen.dart';
-import 'package:investra/feature/profile/setting/screen/investor_setting_screen.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'splash_screen.dart';
 
-void main() {
-  runApp(const MainApp());
+Future<void> main() async {
+  // التأكد من تهيئة أدوات Flutter قبل أي عملية أخرى
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // supabase with investra
+  await Supabase.initialize(
+    url: 'https://eruuwckhnkisegwirxzj.supabase.co',
+    anonKey: 'sb_publishable_M8lhYOIXog8c-bf0p8gCDQ_B-APa-Ih',
+  );
+  print("تم الاتصال بنجاح بـ Investra!");
+
+  runApp(const InvestraApp());
 }
-
-class MainApp extends StatelessWidget {
-  const MainApp({super.key});
+class InvestraApp extends StatelessWidget {
+  const InvestraApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(debugShowCheckedModeBanner: false, home: MyApp());
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'Investra',
+      theme: ThemeData(
+        fontFamily: 'DMSerif',
+        primaryColor: const Color(0xFF1E4D7B),
+      ),
+      home: const SplashScreen(),
+    );
   }
 }
