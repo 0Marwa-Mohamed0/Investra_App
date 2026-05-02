@@ -27,17 +27,17 @@ flutter_launcher_icons:
   ios: true
   image_path: "assets/images/logo22.png"
   min_sdk_android: 21
-  adaptive_icon_background: "#0F172A"
+  adaptive_icon_background: "#FFFFFF"
   adaptive_icon_foreground: "assets/images/logo22.png"
-  adaptive_icon_foreground_inset: 15 # This creates professional padding so it won't look cut off
+  adaptive_icon_foreground_inset: 15
 
 flutter_native_splash:
-  color: "#0F172A"
-  image: assets/images/App_logo.png
+  color: "#FFFFFF"
+  image: assets/images/logo22.png # نستخدم الرسمة فقط هنا لكي لا تُقص
   android_12:
-    image: assets/images/App_logo.png
-    color: "#0F172A"
-    icon_background_color: "#0F172A"
+    image: assets/images/logo22.png
+    color: "#FFFFFF"
+    icon_background_color: "#FFFFFF"
   fullscreen: true
 
 flutter:

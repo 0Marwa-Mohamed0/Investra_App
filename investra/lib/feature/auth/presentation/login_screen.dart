@@ -38,7 +38,7 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // 1. تسجيل الدخول عبر Supabase Auth
+      // 1. Supabase Auth
       final response = await Supabase.instance.client.auth.signInWithPassword(
         email: email,
         password: password,
@@ -46,17 +46,17 @@ class _LoginScreenState extends State<LoginScreen> {
 
       final user = response.user;
       if (user != null) {
-        // الانتظار قليلًا لضمان معالجة الـ Trigger في قاعدة البيانات
+        //  Trigger
         await Future.delayed(const Duration(seconds: 1));
 
-        // 2. جلب نوع المستخدم من جدول User
+        // 2.  نوع المستخدم من جدول User
         var data = await Supabase.instance.client
             .from('User')
             .select('role')
             .eq('userid', user.id)
             .maybeSingle();
 
-        // محاولة ثانية في حال كان الـ Trigger بطيئاً
+        // slow trigger
         if (data == null) {
           await Future.delayed(const Duration(seconds: 1));
           data = await Supabase.instance.client
@@ -80,14 +80,27 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           );
 
-          // توجيه المستخدم بناءً على الـ Role
+          // role direc
           _navigateBasedOnRole(userRole);
         }
       }
     } on AuthException catch (error) {
+      String errorMessage = error.message;
+      
+      // login cred
+      if (error.message == 'Invalid login credentials') {
+        errorMessage = 'Wrong email or password. Please try again.';
+      } else if (error.message.contains('Email not confirmed')) {
+        errorMessage = 'Please verify your email address before logging in.';
+      }
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error.message), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text(errorMessage), 
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
         );
       }
     } catch (error) {
@@ -123,19 +136,19 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _navigateBasedOnRole(String role) {
-    // إشعار تأكيدي بنوع الـ Role الذي تم العثور عليه
+    // إشعار تأكيدي بنوع الـ Role
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('تم التحقق! نوع الحساب: $role'),
+        content: Text('the role is $role'),
         backgroundColor: Colors.blueAccent,
       ),
     );
 
     if (role == 'Investor') {
-      print("متجه الآن لصفحة المستثمر...");
+      print("go to investor home page...");
       // Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (context) => const InvestorHomePage()), (route) => false);
     } else if (role == 'Entrepreneur') {
-      print("متجه الآن لصفحة رائد الأعمال...");
+      print("go to Entrepreneur home page ...");
       // Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (context) => const EntrepreneurHomePage()), (route) => false);
     } else {
       // في حال كانت القيمة غير متوقعة أو غير موجودة
