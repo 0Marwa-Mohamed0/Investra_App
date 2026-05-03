@@ -9,13 +9,11 @@ class MessageInputBar extends StatelessWidget {
     required this.controller,
     required this.onSend,
     this.onAttachment,
-    this.onDocument,
   });
 
   final TextEditingController controller;
   final VoidCallback onSend;
   final VoidCallback? onAttachment;
-  final VoidCallback? onDocument;
 
   @override
   Widget build(BuildContext context) {
@@ -76,15 +74,6 @@ class MessageInputBar extends StatelessWidget {
                       borderSide: const BorderSide(
                         color: AppColors.primaryColor,
                         width: 1.2,
-                      ),
-                    ),
-                    suffixIcon: IconButton(
-                      onPressed: onDocument,
-                      icon: CustomSvgPicture(
-                        path: AppImages.documentSvg,
-                        color: AppColors.grayColor,
-                        width: 20,
-                        height: 20,
                       ),
                     ),
                   ),

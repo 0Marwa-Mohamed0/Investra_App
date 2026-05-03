@@ -7,6 +7,7 @@ import 'package:investra/features/messages/domain/entities/chat_contact.dart';
 import 'package:investra/features/messages/domain/entities/chat_message.dart';
 import 'package:investra/features/messages/domain/entities/chat_thread_item.dart';
 import 'package:investra/features/messages/presentation/widgets/chat_bubble.dart';
+import 'package:investra/features/messages/presentation/widgets/chat_attachment_bottom_sheet.dart';
 import 'package:investra/features/messages/presentation/widgets/message_input_bar.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -33,7 +34,9 @@ class _ChatScreenState extends State<ChatScreen> {
       MessagesMockDataSource.initialThreadFor(_user.id),
     );
     _scrollController.addListener(_handleScroll);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom(animated: false));
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _scrollToBottom(animated: false),
+    );
   }
 
   @override
@@ -75,8 +78,8 @@ class _ChatScreenState extends State<ChatScreen> {
     final h12 = h24 == 0
         ? 12
         : h24 > 12
-            ? h24 - 12
-            : h24;
+        ? h24 - 12
+        : h24;
     final ampm = h24 < 12 ? 'AM' : 'PM';
     return '$h12:${m.toString().padLeft(2, '0')} $ampm';
   }
@@ -201,7 +204,10 @@ class _ChatScreenState extends State<ChatScreen> {
               children: [
                 ListView.builder(
                   controller: _scrollController,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   itemCount: _items.length,
                   itemBuilder: (context, index) {
                     final item = _items[index];
@@ -266,16 +272,7 @@ class _ChatScreenState extends State<ChatScreen> {
           MessageInputBar(
             controller: _messageController,
             onSend: _send,
-            onAttachment: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Attachment')),
-              );
-            },
-            onDocument: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Document')),
-              );
-            },
+            onAttachment: () => ChatAttachmentBottomSheet.show(context),
           ),
         ],
       ),

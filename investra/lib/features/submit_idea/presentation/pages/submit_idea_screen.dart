@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:investra/core/constants/app_images.dart';
 import 'package:investra/core/styles/colors.dart';
 import 'package:investra/core/widgets/custom_svg_picture.dart';
+import 'package:investra/features/messages/presentation/widgets/chat_attachment_bottom_sheet.dart';
 import 'package:investra/features/submit_idea/presentation/widgets/submit_button.dart';
 
 /// Multi-step idea submission form aligned with app design tokens.
@@ -18,8 +19,7 @@ class _SubmitIdeaScreenState extends State<SubmitIdeaScreen> {
 
   String? _category;
   bool _businessPlan = false;
-  bool _pitchDeck = false;
-  bool _financials = false;
+  bool _feasibilityStudy = false;
 
   int _completedSteps = 0;
   double _progress = 0;
@@ -57,7 +57,7 @@ class _SubmitIdeaScreenState extends State<SubmitIdeaScreen> {
 
   bool get _step2Complete => _pitchController.text.trim().isNotEmpty;
 
-  bool get _step3Complete => _businessPlan || _pitchDeck || _financials;
+  bool get _step3Complete => _businessPlan || _feasibilityStudy;
 
   /// Updates step counter, progress bar, submit enabled state, and completed count.
   void updateStepProgress() {
@@ -229,23 +229,32 @@ class _SubmitIdeaScreenState extends State<SubmitIdeaScreen> {
                 setState(() => _businessPlan = v ?? false);
                 updateStepProgress();
               },
-            ),
-            const SizedBox(height: 8),
-            _ChecklistTile(
-              label: 'Pitch Deck',
-              value: _pitchDeck,
-              onChanged: (v) {
-                setState(() => _pitchDeck = v ?? false);
-                updateStepProgress();
+              onAdd: () async {
+                await ChatAttachmentBottomSheet.pickDocument(
+                  context,
+                  onFilePicked: (_) {
+                    setState(() => _businessPlan = true);
+                    updateStepProgress();
+                  },
+                );
               },
             ),
             const SizedBox(height: 8),
             _ChecklistTile(
-              label: 'Financials',
-              value: _financials,
+              label: 'Feasibility Study',
+              value: _feasibilityStudy,
               onChanged: (v) {
-                setState(() => _financials = v ?? false);
+                setState(() => _feasibilityStudy = v ?? false);
                 updateStepProgress();
+              },
+              onAdd: () async {
+                await ChatAttachmentBottomSheet.pickDocument(
+                  context,
+                  onFilePicked: (_) {
+                    setState(() => _feasibilityStudy = true);
+                    updateStepProgress();
+                  },
+                );
               },
             ),
             const SizedBox(height: 28),
@@ -357,11 +366,13 @@ class _ChecklistTile extends StatelessWidget {
     required this.label,
     required this.value,
     required this.onChanged,
+    required this.onAdd,
   });
 
   final String label;
   final bool value;
   final ValueChanged<bool?> onChanged;
+  final Future<void> Function() onAdd;
 
   @override
   Widget build(BuildContext context) {
@@ -391,6 +402,24 @@ class _ChecklistTile extends StatelessWidget {
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: AppColors.darkGray,
                     fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              IconButton(
+                onPressed: () => onAdd(),
+                tooltip: 'Add document',
+                icon: const Icon(Icons.add),
+                iconSize: 22,
+                style: IconButton.styleFrom(
+                  foregroundColor: AppColors.primaryColor,
+                  backgroundColor: AppColors.secondary2Color,
+                  padding: const EdgeInsets.all(6),
+                  minimumSize: const Size.square(36),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: VisualDensity.compact,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    side: const BorderSide(color: AppColors.bgGray),
                   ),
                 ),
               ),
