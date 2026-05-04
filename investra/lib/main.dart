@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:investra/core/styles/colors.dart';
-import 'package:investra/feature/main_app/main_app_enterpreneur.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'feature/splash/screen/splash_screen.dart';
 
@@ -17,7 +15,6 @@ Future<void> main() async {
 
   runApp(const InvestraApp());
 }
-
 class InvestraApp extends StatelessWidget {
   const InvestraApp({super.key});
 
@@ -28,9 +25,9 @@ class InvestraApp extends StatelessWidget {
       title: 'Investra',
       theme: ThemeData(
         fontFamily: 'DMSerif',
-        primaryColor: AppColors.primaryColor,
+        primaryColor: const Color(0xFF1E4D7B),
       ),
-      home: const MainAppEnterpreneurScreen(),
+      home: const SplashScreen(),
     );
   }
 }

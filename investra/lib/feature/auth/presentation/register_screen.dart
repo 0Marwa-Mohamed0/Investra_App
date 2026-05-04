@@ -305,7 +305,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
         children: [
           Expanded(child: _socialBtn("Google", 'assets/icons/google_svg.svg', OAuthProvider.google)),
           const Gap(15),
-          Expanded(child: _socialBtn("LinkedIn", 'assets/icons/linkedIn.svg', OAuthProvider.linkedin)),
+          Expanded(child: _socialBtn("LinkedIn", 'assets/icons/Linkedin.svg', OAuthProvider.linkedin)),
         ],
       ),
     ],

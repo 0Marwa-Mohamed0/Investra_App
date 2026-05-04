@@ -325,7 +325,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         Expanded(
                           child: _socialBtn(
                             "LinkedIn",
-                            'assets/icons/linkedIn.svg',
+                            'assets/icons/Linkedin.svg',
                             OAuthProvider.linkedin,
                           ),
                         ),

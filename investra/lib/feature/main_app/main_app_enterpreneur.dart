@@ -6,6 +6,9 @@ import 'package:investra/core/widgets/custom_svg_picture.dart';
 import 'package:investra/feature/home_page/screens/enterepreneur_home.dart';
 import 'package:investra/feature/messages/presentation/pages/messages_list_screen.dart';
 import 'package:investra/feature/setting/screen/entrepreneur_setting_screen.dart';
+import 'package:investra/feature/aiChatbot/ai_chatbot.dart';
+
+
 
 class MainAppEnterpreneurScreen extends StatefulWidget {
   const MainAppEnterpreneurScreen({super.key, this.selectedIndex});
@@ -55,9 +58,10 @@ class MainAppScreenState extends State<MainAppEnterpreneurScreen> {
     // تحديث القائمة لضمان استلام الـ controller
     final List<Widget> screens = [
       EntrepreneurHomePage(scrollController: _scrollController),
-
-      const Center(child: Text("AI Chatbot")),
-      MessagesListScreen(),
+      AiChatbotScreen(onScroll: (visible) {
+        if (_isVisible != visible) setState(() => _isVisible = visible);
+      }),
+      const MessagesListScreen(),
       SettingsScreen(scrollController: _scrollController),
     ];
 

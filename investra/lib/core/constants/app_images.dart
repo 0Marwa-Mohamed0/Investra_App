@@ -5,7 +5,10 @@ abstract class AppImages {
   static const String verifiedBadge = 'assets/images/Verified_Badge.png';
   static const String applogo = 'assets/images/App_logo.png';
   static const String logo = 'assets/images/logo22.png';
+  static const String background = 'assets/images/Background.png';
 
+
+  //
   static const String chatSvg = 'assets/icons/Chat.svg';
   static const String logoSvg = 'assets/icons/logo22Svg.svg';
   static const String appLogoSvg = 'assets/icons/App_logoSvg.svg';
@@ -43,4 +46,6 @@ abstract class AppImages {
   static const String videoSvg = 'assets/icons/video.svg';
   static const String warningSvg = 'assets/icons/warning.svg';
   static const String powerSvg = 'assets/icons/power.svg';
+
+
 }

@@ -7,7 +7,7 @@ import 'package:investra/feature/home_page/screens/investor_home.dart';
 import 'package:investra/feature/messages/presentation/pages/messages_list_screen.dart'
     show MessagesListScreen;
 import 'package:investra/feature/setting/screen/investor_setting_screen.dart';
-
+import 'package:investra/feature/aiChatbot/ai_chatbot.dart';
 class MainAppInvestorScreen extends StatefulWidget {
   const MainAppInvestorScreen({super.key, this.selectedIndex});
   final int? selectedIndex;
@@ -30,9 +30,10 @@ class MainAppScreenState extends State<MainAppInvestorScreen> {
 
     screens = [
       InvestorHomePage(scrollController: _scrollController),
-
-      MessagesListScreen(),
-      const Center(child: Text("AI Chatbot")),
+      const MessagesListScreen(),
+      AiChatbotScreen(onScroll: (visible) {
+        if (_isVisible != visible) setState(() => _isVisible = visible);
+      }),
       AccountScreen(scrollController: _scrollController),
     ];
   }
