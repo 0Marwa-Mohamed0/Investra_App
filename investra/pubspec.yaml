@@ -14,8 +14,10 @@ dependencies:
   dio: ^5.9.2
   cached_network_image: ^3.4.1
   image_picker: ^1.2.1
+  file_picker: ^8.1.2 #files from phone
   supabase_flutter: ^2.12.4
   intl: ^0.20.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -34,7 +36,7 @@ flutter_launcher_icons:
 
 flutter_native_splash:
   color: "#FFFFFF"
-  image: assets/images/logo22.png # نستخدم الرسمة فقط هنا لكي لا تُقص
+  image: assets/images/logo22.png
   android_12:
     image: assets/images/logo22.png
     color: "#FFFFFF"
@@ -43,11 +45,9 @@ flutter_native_splash:
 
 flutter:
   uses-material-design: true
-
   assets:
     - assets/images/
     - assets/icons/
-
   fonts:
     - family: DMSerif
       fonts:

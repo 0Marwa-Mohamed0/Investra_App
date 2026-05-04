@@ -1,5 +1,8 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:investra/core/styles/colors.dart';
 import 'package:intl/intl.dart';
 
 class AiChatbotScreen extends StatefulWidget {
@@ -15,201 +18,152 @@ class _AiChatbotScreenState extends State<AiChatbotScreen> {
   final _supabase = Supabase.instance.client;
 
   String? _currentSessionId;
-  String _userName = "username";
+  String _userName = "User";
   bool _isLoading = true;
-  String? _errorMessage;
+  bool _isMenuOpen = false;
+  bool _isSending = false;
 
-  // ألوان مطابقة لتصميم Figma الخاص بـ Investra
-  final Color primaryNavy = const Color(0xFF132F4C);
-  final Color lightAiBubble = const Color(0xFFF3F6F9); // لون فقاعة الـ AI الفاتح
-  final Color backgroundWhite = Colors.white;
+  File? _selectedFile;
+  String? _selectedFileName;
 
   @override
   void initState() {
     super.initState();
-    _setupChat();
+    _initializeChat();
   }
 
-  Future<void> _setupChat() async {
+  Future<void> _initializeChat() async {
     try {
       final user = _supabase.auth.currentUser;
-      if (user == null) {
-        setState(() {
-          _errorMessage = "Connection error. Please try again.";
-          _isLoading = false;
-        });
-        return;
-      }
+      if (user == null) return;
 
-      // جلب اسم المستخدم
-      final userData = await _supabase
-          .from('User')
-          .select('name')
-          .eq('userid', user.id)
-          .maybeSingle();
+      final userData = await _supabase.from('User').select('name').eq('userid', user.id).maybeSingle();
+      if (userData != null) setState(() => _userName = userData['name']);
 
-      if (userData != null && userData['name'] != null) {
-        setState(() => _userName = userData['name']);
-      }
-
-      // جلب أو إنشاء جلسة
-      final existingSession = await _supabase
-          .from('AI_Sessions')
-          .select()
-          .eq('user_id', user.id)
-          .order('created_at', ascending: false)
-          .limit(1)
-          .maybeSingle();
-
-      if (existingSession != null) {
-        setState(() {
-          _currentSessionId = existingSession['session_id'];
-          _isLoading = false;
-        });
-      } else {
-        await _createNewChatSession(user.id);
-      }
+      await _createNewChatSession(user.id);
     } catch (e) {
-      debugPrint("INVESTRA_ERROR_LOG: $e");
-      setState(() {
-        _errorMessage = "Connection error. Please try again.";
-        _isLoading = false;
-      });
+      debugPrint("Init Error: $e");
     }
   }
 
   Future<void> _createNewChatSession(String userId) async {
+    if (!mounted) return;
+    setState(() => _isLoading = true);
     try {
       final newSession = await _supabase.from('AI_Sessions').insert({
         'user_id': userId,
-        'title': 'Investra Chat Session',
+        'title': 'Chat ${DateFormat('MMM d, h:mm a').format(DateTime.now())}',
       }).select().single();
 
-      setState(() {
-        _currentSessionId = newSession['session_id'];
-        _isLoading = false;
-      });
+      final sessionId = newSession['session_id'];
 
-      await _insertMessage(
-          "Hi $_userName , I am your Investra AI\nhow can i help you today",
-          'assistant'
-      );
-    } catch (e) {
-      setState(() {
-        _errorMessage = "Connection error. Please try again.";
-        _isLoading = false;
-      });
-    }
-  }
-
-  Future<void> _insertMessage(String content, String role) async {
-    if (_currentSessionId == null) return;
-    try {
       await _supabase.from('AI_Messages').insert({
-        'session_id': _currentSessionId,
-        'sender_role': role,
-        'content': content,
+        'session_id': sessionId,
+        'sender_role': 'assistant',
+        'content': 'Hi $_userName, I am your Investra AI\nhow can I help you today',
       });
+
+      if (mounted) {
+        setState(() {
+          _currentSessionId = sessionId;
+          _isLoading = false;
+        });
+      }
     } catch (e) {
-      debugPrint("MESSAGE_ERROR: $e");
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  void _handleSendMessage() async {
+  Future<void> _pickFile() async {
+    setState(() => _isMenuOpen = false);
+    FilePickerResult? result = await FilePicker.platform.pickFiles();
+    if (result != null) {
+      setState(() {
+        _selectedFile = File(result.files.single.path!);
+        _selectedFileName = result.files.single.name;
+      });
+    }
+  }
+
+  Future<void> _handleSendMessage() async {
+    if (_isSending || _currentSessionId == null) return;
     final text = _messageController.text.trim();
-    if (text.isEmpty || _currentSessionId == null) return;
+    if (text.isEmpty && _selectedFile == null) return;
 
     _messageController.clear();
-    await _insertMessage(text, 'user');
-  }
+    final fileToSend = _selectedFile;
+    final fileNameToSend = _selectedFileName;
 
-  // التعامل مع خيارات القائمة المنسدلة (Popup Menu)
-  void _handleMenuSelection(String value) {
-    if (value == 'new_chat') {
-      setState(() => _isLoading = true);
-      _createNewChatSession(_supabase.auth.currentUser!.id);
-    } else {
-      // هنا يمكنك إضافة منطق تحليل الضعف أو رفع الملفات لاحقاً
-      debugPrint("Selected: $value");
+    setState(() {
+      _selectedFile = null;
+      _selectedFileName = null;
+      _isSending = true; // الزرار هيبدأ يلف هنا
+    });
+
+    try {
+      String? uploadedFileUrl;
+      if (fileToSend != null) {
+        String storagePath = 'chat_files/${DateTime.now().millisecondsSinceEpoch}_$fileNameToSend';
+        await _supabase.storage.from('chat_files').upload(storagePath, fileToSend);
+        uploadedFileUrl = _supabase.storage.from('chat_files').getPublicUrl(storagePath);
+      }
+
+      await _supabase.from('AI_Messages').insert({
+        'session_id': _currentSessionId,
+        'sender_role': 'user',
+        'content': text,
+        'file_url': uploadedFileUrl,
+        'file_name': fileNameToSend,
+      });
+
+    } catch (e) {
+      debugPrint("Send Error: $e");
+    } finally {
+      if (mounted) setState(() => _isSending = false); // الزرار هيبطل لف فوراً
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: backgroundWhite,
-      appBar: AppBar(
-        backgroundColor: backgroundWhite,
-        elevation: 0,
-        centerTitle: false,
-        leading: Icon(Icons.auto_awesome, color: primaryNavy, size: 20),
-        title: Text("AI CONSULTANT",
-            style: TextStyle(
-              color: primaryNavy,
-              fontWeight: FontWeight.w800,
-              fontSize: 16,
-              letterSpacing: 0.5,
-            )
-        ),
-        actions: [
-          IconButton(
-            icon: Icon(Icons.history, color: primaryNavy, size: 22),
-            onPressed: () {},
-          ),
-          const SizedBox(width: 8),
-        ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1.0),
-          child: Container(color: Colors.grey.shade200, height: 1.0), // خط خفيف تحت الـ AppBar
-        ),
-      ),
-      body: _buildBody(),
-    );
-  }
-
-  Widget _buildBody() {
-    if (_isLoading) {
-      return Center(child: CircularProgressIndicator(color: primaryNavy));
-    }
-
-    if (_errorMessage != null) {
-      // شاشة الخطأ التي تشبه الشاشة الرمادية لكن مع زر لإعادة المحاولة بشكل نظيف
-      return Container(
-        color: const Color(0xFFE0E0E0), // نفس اللون الرمادي بصورتك
-        width: double.infinity,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              _errorMessage!,
-              style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () {
-                setState(() {
-                  _isLoading = true;
-                  _errorMessage = null;
-                });
-                _setupChat();
-              },
-              child: const Text("Retry"),
+    return GestureDetector(
+      onTap: () => setState(() => _isMenuOpen = false),
+      child: Scaffold(
+        backgroundColor: AppColors.bgColor,
+        appBar: AppBar(
+          backgroundColor: AppColors.bgColor,
+          elevation: 0,
+          centerTitle: true,
+          title: const Text("AI CONSULTANT",
+              style: TextStyle(color: AppColors.primaryColor, fontWeight: FontWeight.bold)),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.history, color: AppColors.primaryColor),
+              onPressed: () {},
             )
           ],
         ),
-      );
-    }
-
-    return Column(
-      children: [
-        Expanded(child: _buildMessagesStream()),
-        _buildInputArea(),
-      ],
+        body: _isLoading
+            ? const Center(child: CircularProgressIndicator(color: AppColors.primaryColor))
+            : Stack(
+          children: [
+            Column(
+              children: [
+                Expanded(child: _buildMessagesStream()),
+                _buildInputArea(),
+              ],
+            ),
+            if (_isMenuOpen)
+              Positioned(bottom: 90, left: 20, child: _buildSimpleMenu()),
+          ],
+        ),
+      ),
     );
   }
 
   Widget _buildMessagesStream() {
+    if (_currentSessionId == null) return const SizedBox();
     return StreamBuilder<List<Map<String, dynamic>>>(
+      // Stream بسيط ومباشر عشان يلقط التغييرات فوراً
       stream: _supabase
           .from('AI_Messages')
           .stream(primaryKey: ['message_id'])
@@ -217,168 +171,169 @@ class _AiChatbotScreenState extends State<AiChatbotScreen> {
           .order('created_at', ascending: true),
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const SizedBox();
-
         final messages = snapshot.data!;
         return ListView.builder(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+          padding: const EdgeInsets.all(16),
           itemCount: messages.length,
-          itemBuilder: (context, index) {
-            final msg = messages[index];
-            final createdAt = msg['created_at'] != null
-                ? DateTime.parse(msg['created_at'])
-                : DateTime.now();
-            final timeString = DateFormat('h:mm a').format(createdAt);
-
-            return _buildChatBubble(msg, timeString);
-          },
+          itemBuilder: (context, index) => _buildChatBubble(messages[index]),
         );
       },
     );
   }
 
-  Widget _buildChatBubble(Map<String, dynamic> msg, String timeString) {
+  Widget _buildChatBubble(Map<String, dynamic> msg) {
     bool isAi = msg['sender_role'] == 'assistant';
+    String time = msg['created_at'] != null
+        ? DateFormat('h:mm a').format(DateTime.parse(msg['created_at']))
+        : "";
 
-    if (isAi) {
-      // تصميم رسالة الـ AI مطابق لـ Figma
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 24),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(Icons.auto_awesome, color: primaryNavy, size: 20),
-            const SizedBox(width: 8),
-            Column(
+    return Padding(
+      key: ValueKey(msg['message_id']),
+      padding: const EdgeInsets.only(bottom: 15),
+      child: Column(
+        crossAxisAlignment: isAi ? CrossAxisAlignment.start : CrossAxisAlignment.end,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(14),
+            constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
+            decoration: BoxDecoration(
+              color: isAi ? AppColors.secondary1Color : AppColors.primaryColor,
+              borderRadius: BorderRadius.circular(15),
+            ),
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Container(
-                  constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  decoration: BoxDecoration(
-                    color: lightAiBubble,
-                    borderRadius: BorderRadius.circular(16),
+                if (msg['content'] != null)
+                  Text(
+                    msg['content'],
+                    style: TextStyle(color: isAi ? AppColors.blackColor : Colors.white),
                   ),
-                  child: Text(
-                    msg['content'] ?? "",
-                    style: const TextStyle(color: Colors.black87, fontSize: 14, height: 1.5),
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Padding(
-                  padding: const EdgeInsets.only(left: 4),
-                  child: Text(
-                    timeString,
-                    style: TextStyle(color: Colors.grey.shade500, fontSize: 10),
-                  ),
-                ),
+                if (msg['file_url'] != null) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      // استخدام الـ Alpha بدلاً من Opacity لتجنب الـ Warnings
+                      color: isAi ? AppColors.grayColor.withAlpha(40) : Colors.white.withAlpha(30),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.insert_drive_file, size: 18, color: Colors.blueAccent),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            msg['file_name'] ?? "File",
+                            style: const TextStyle(color: Colors.blueAccent, fontSize: 12),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                ]
               ],
             ),
-          ],
-        ),
-      );
-    } else {
-      // تصميم رسالة المستخدم
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 24),
-        child: Align(
-          alignment: Alignment.centerRight,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Container(
-                constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                decoration: BoxDecoration(
-                  color: primaryNavy,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Text(
-                  msg['content'] ?? "",
-                  style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.5),
-                ),
-              ),
-              const SizedBox(height: 6),
-              Padding(
-                padding: const EdgeInsets.only(right: 4),
-                child: Text(
-                  timeString,
-                  style: TextStyle(color: Colors.grey.shade500, fontSize: 10),
-                ),
-              ),
-            ],
           ),
-        ),
-      );
-    }
-  }
-
-  Widget _buildInputArea() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-      decoration: BoxDecoration(
-        color: backgroundWhite,
-        border: Border(top: BorderSide(color: Colors.grey.shade200)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          // قائمة الإضافات (Popup Menu) مطابقة للتصميم
-          PopupMenuButton<String>(
-            icon: Icon(Icons.add_circle_outline, color: primaryNavy, size: 28),
-            offset: const Offset(0, -220), // لرفع القائمة فوق مربع النص
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            color: Colors.white,
-            elevation: 4,
-            onSelected: _handleMenuSelection,
-            itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-              _buildMenuItem('new_chat', Icons.auto_awesome, 'New Chat'),
-              _buildMenuItem('analyze', Icons.search, 'Analyze weaknesses'),
-              _buildMenuItem('score', Icons.bar_chart, 'Calculate AI score'),
-              _buildMenuItem('upload', Icons.attach_file, 'Upload File'),
-            ],
-          ),
-          const SizedBox(width: 8),
-          // مربع النص
-          Expanded(
-            child: TextField(
-              controller: _messageController,
-              decoration: InputDecoration(
-                hintText: "Type a message...",
-                hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
-                filled: true,
-                fillColor: lightAiBubble,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(25),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          // زر الإرسال
-          GestureDetector(
-            onTap: _handleSendMessage,
-            child: CircleAvatar(
-              backgroundColor: primaryNavy,
-              radius: 22,
-              child: const Icon(Icons.send, color: Colors.white, size: 18),
-            ),
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(time, style: const TextStyle(fontSize: 10, color: AppColors.grayColor)),
           ),
         ],
       ),
     );
   }
 
-  // دالة مساعدة لبناء عناصر القائمة المنسدلة
-  PopupMenuItem<String> _buildMenuItem(String value, IconData icon, String text) {
-    return PopupMenuItem<String>(
-      value: value,
+  Widget _buildInputArea() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 30),
+      child: Column(
+        children: [
+          if (_selectedFile != null) _buildFilePreview(),
+          Row(
+            children: [
+              IconButton(
+                icon: Icon(_isMenuOpen ? Icons.close : Icons.add_circle_outline,
+                    color: AppColors.primaryColor, size: 30),
+                onPressed: () => setState(() => _isMenuOpen = !_isMenuOpen),
+              ),
+              Expanded(
+                child: TextField(
+                  controller: _messageController,
+                  decoration: InputDecoration(
+                    hintText: "Type a message...",
+                    filled: true,
+                    fillColor: AppColors.secondary1Color,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(30), borderSide: BorderSide.none),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: _handleSendMessage,
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: const BoxDecoration(color: AppColors.primaryColor, shape: BoxShape.circle),
+                  child: _isSending
+                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      : const Icon(Icons.send, color: Colors.white, size: 20),
+                ),
+              )
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSimpleMenu() {
+    return Material(
+      elevation: 8,
+      shadowColor: AppColors.blackColor.withAlpha(50),
+      borderRadius: BorderRadius.circular(15),
+      child: Container(
+        width: 170,
+        decoration: BoxDecoration(color: AppColors.secondary2Color, borderRadius: BorderRadius.circular(15)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.auto_awesome_outlined, color: AppColors.primaryColor),
+              title: const Text("New Chat", style: TextStyle(color: AppColors.primaryColor, fontWeight: FontWeight.bold)),
+              onTap: () {
+                setState(() => _isMenuOpen = false);
+                final user = _supabase.auth.currentUser;
+                if (user != null) _createNewChatSession(user.id);
+              },
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.attach_file, color: AppColors.primaryColor),
+              title: const Text("Upload File", style: TextStyle(color: AppColors.primaryColor, fontWeight: FontWeight.bold)),
+              onTap: _pickFile,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFilePreview() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(color: AppColors.secondary1Color, borderRadius: BorderRadius.circular(12)),
       child: Row(
         children: [
-          Icon(icon, color: primaryNavy, size: 22),
-          const SizedBox(width: 12),
-          Text(text, style: TextStyle(color: primaryNavy, fontSize: 15)),
+          const Icon(Icons.file_copy, color: AppColors.primaryColor),
+          const SizedBox(width: 10),
+          Expanded(child: Text(_selectedFileName!, style: const TextStyle(fontWeight: FontWeight.bold))),
+          IconButton(
+            icon: const Icon(Icons.cancel, color: AppColors.errorColor),
+            onPressed: () => setState(() { _selectedFile = null; _selectedFileName = null; }),
+          ),
         ],
       ),
     );
