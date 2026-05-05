@@ -8,6 +8,7 @@ import 'package:investra/feature/messages/presentation/pages/messages_list_scree
     show MessagesListScreen;
 import 'package:investra/feature/setting/screen/investor_setting_screen.dart';
 import 'package:investra/feature/aiChatbot/ai_chatbot.dart';
+
 class MainAppInvestorScreen extends StatefulWidget {
   const MainAppInvestorScreen({super.key, this.selectedIndex});
   final int? selectedIndex;

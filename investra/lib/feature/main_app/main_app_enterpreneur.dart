@@ -7,9 +7,6 @@ import 'package:investra/feature/home_page/screens/enterepreneur_home.dart';
 import 'package:investra/feature/messages/presentation/pages/messages_list_screen.dart';
 import 'package:investra/feature/setting/screen/entrepreneur_setting_screen.dart';
 import 'package:investra/feature/aiChatbot/ai_chatbot.dart';
-
-
-
 class MainAppEnterpreneurScreen extends StatefulWidget {
   const MainAppEnterpreneurScreen({super.key, this.selectedIndex});
   final int? selectedIndex;
@@ -58,12 +55,15 @@ class MainAppScreenState extends State<MainAppEnterpreneurScreen> {
     // تحديث القائمة لضمان استلام الـ controller
     final List<Widget> screens = [
       EntrepreneurHomePage(scrollController: _scrollController),
+
+
+
       AiChatbotScreen(onScroll: (visible) {
         if (_isVisible != visible) setState(() => _isVisible = visible);
-      }),
-      const MessagesListScreen(),
+      }),MessagesListScreen(),
       SettingsScreen(scrollController: _scrollController),
     ];
+
 
     return Scaffold(
       backgroundColor: AppColors.bgColor,
@@ -76,7 +76,7 @@ class MainAppScreenState extends State<MainAppEnterpreneurScreen> {
         curve: Curves.easeInOut, // حركة ناعمة في الدخول والخروج
         height: _isVisible
             ? (kBottomNavigationBarHeight +
-                  MediaQuery.of(context).padding.bottom)
+            MediaQuery.of(context).padding.bottom)
             : 0,
         child: Wrap(
           // Wrap يمنع ظهور خطأ المساحة (Overflow) عند وصول الارتفاع لصفر

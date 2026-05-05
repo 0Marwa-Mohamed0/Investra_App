@@ -5,6 +5,8 @@ import 'package:investra/core/styles/colors.dart';
 import 'package:investra/feature/home_page/widget/build_Filters.dart';
 import 'package:investra/feature/home_page/widget/build_PostCard.dart';
 import 'package:investra/feature/home_page/widget/build_Search_Bar.dart';
+import 'package:investra/feature/notification/view/notifications_screen.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class InvestorHomePage extends StatelessWidget {
   final ScrollController scrollController;
@@ -13,6 +15,8 @@ class InvestorHomePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final supabase = Supabase.instance.client;
+    final userId = supabase.auth.currentUser!.id;
     final double screenWidth = MediaQuery.of(context).size.width;
     final double horizontalPadding = screenWidth * 0.05;
 
@@ -31,30 +35,59 @@ class InvestorHomePage extends StatelessWidget {
           ),
         ),
         actions: [
-          IconButton(
-            onPressed: () {},
-            icon: SvgPicture.asset(
-              AppImages.notificationSvg,
-              colorFilter: const ColorFilter.mode(
-                AppColors.primaryColor,
-                BlendMode.srcIn,
-              ),
-            ),
+          StreamBuilder<List<Map<String, dynamic>>>(
+            stream: supabase.from('notifications').stream(primaryKey: ['id']),
+            builder: (context, snapshot) {
+              // فلترة الإشعارات غير المقروءة للمستخدم الحالي داخل الـ builder
+              final unread = snapshot.data?.where((n) =>
+              n['user_id'] == userId && n['is_read'] == false
+              ).toList() ?? [];
+
+              bool hasUnread = unread.isNotEmpty;
+
+              return Stack(
+                children: [
+                  IconButton(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const NotificationsScreen()),
+                      );
+                    },
+                    icon: SvgPicture.asset(
+                      AppImages.notificationSvg,
+                      colorFilter: const ColorFilter.mode(
+                        AppColors.primaryColor,
+                        BlendMode.srcIn,
+                      ),
+                    ),
+                  ),
+                  if (hasUnread)
+                    Positioned(
+                      right: 12,
+                      top: 12,
+                      child: Container(
+                        width: 9,
+                        height: 9,
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
           ),
           const SizedBox(width: 10),
         ],
       ),
       body: SafeArea(
         child: SingleChildScrollView(
-          // 1. التأكد من ربط الـ controller
           controller: scrollController,
-
-          // 2. تصحيح الـ physics لضمان إرسال الإشعارات بسلاسة
-          // استخدمي AlwaysScrollableScrollPhysics لضمان عمل التمرير حتى لو المحتوى قصير
           physics: const AlwaysScrollableScrollPhysics(
-            parent: BouncingScrollPhysics(), // تعطيكِ شعور مرن أثناء التمرير
+            parent: BouncingScrollPhysics(),
           ),
-
           child: Padding(
             padding: EdgeInsets.symmetric(
               horizontal: horizontalPadding,
@@ -80,7 +113,7 @@ class InvestorHomePage extends StatelessWidget {
                   category: 'TECHNOLOGY',
                   title: 'Bridging idea with investments',
                   description:
-                      'Investra is a smart mobile application that connects entrepreneurs with investors.',
+                  'Investra is a smart mobile application that connects entrepreneurs with investors.',
                   members: '+12',
                 ),
                 const SizedBox(height: 16),
@@ -88,7 +121,7 @@ class InvestorHomePage extends StatelessWidget {
                   category: 'FINTECH',
                   title: 'ZenLedger AI',
                   description:
-                      'Automated micro-investing platform that uses AI to analyze spending habits.',
+                  'Automated micro-investing platform that uses AI to analyze spending habits.',
                   members: '+8',
                 ),
                 const SizedBox(height: 16),
@@ -96,10 +129,9 @@ class InvestorHomePage extends StatelessWidget {
                   category: 'HEALTHTECH',
                   title: 'NeuroSync Wearable',
                   description:
-                      'Next-gen EEG headband that provides real-time biofeedback.',
+                  'Next-gen EEG headband that provides real-time biofeedback.',
                   members: '+15',
                 ),
-                // 3. مساحة إضافية مهمة جداً لضمان القدرة على التمرير واختفاء الشريط
                 const SizedBox(height: 120),
               ],
             ),

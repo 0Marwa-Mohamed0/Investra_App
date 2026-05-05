@@ -3,7 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'feature/splash/screen/splash_screen.dart';
 
 Future<void> main() async {
-  // التأكد من تهيئة أدوات Flutter قبل أي عملية أخرى
+  //
   WidgetsFlutterBinding.ensureInitialized();
 
   // supabase with investra

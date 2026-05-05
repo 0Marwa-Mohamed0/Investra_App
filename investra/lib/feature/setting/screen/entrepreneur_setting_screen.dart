@@ -27,7 +27,7 @@ class SettingsScreen extends StatelessWidget {
           'The Editorial Wealth \n Experience',
           style: TextStyle(
             color: AppColors.primaryColor,
-            fontSize: 20,
+            fontSize: 25,
             fontWeight: FontWeight.bold,
           ),
         ),
