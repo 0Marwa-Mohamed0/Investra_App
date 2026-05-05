@@ -4,10 +4,14 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:investra/core/styles/colors.dart';
 import 'package:intl/intl.dart';
+import 'package:investra/feature/aiChatbot/ai_chat_history.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 class AiChatbotScreen extends StatefulWidget {
   final Function(bool)? onScroll;
-  const AiChatbotScreen({super.key, this.onScroll});
+  final String? existingSessionId;
+
+  const AiChatbotScreen({super.key, this.onScroll, this.existingSessionId});
 
   @override
   State<AiChatbotScreen> createState() => _AiChatbotScreenState();
@@ -40,9 +44,17 @@ class _AiChatbotScreenState extends State<AiChatbotScreen> {
       final userData = await _supabase.from('User').select('name').eq('userid', user.id).maybeSingle();
       if (userData != null) setState(() => _userName = userData['name']);
 
-      await _createNewChatSession(user.id);
+      if (widget.existingSessionId != null) {
+        setState(() {
+          _currentSessionId = widget.existingSessionId;
+          _isLoading = false;
+        });
+      } else {
+        await _createNewChatSession(user.id);
+      }
     } catch (e) {
       debugPrint("Init Error: $e");
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -50,9 +62,12 @@ class _AiChatbotScreenState extends State<AiChatbotScreen> {
     if (!mounted) return;
     setState(() => _isLoading = true);
     try {
+      final nowStr = DateTime.now().toIso8601String(); // phone time
+
       final newSession = await _supabase.from('AI_Sessions').insert({
         'user_id': userId,
         'title': 'Chat ${DateFormat('MMM d, h:mm a').format(DateTime.now())}',
+        'created_at': nowStr,
       }).select().single();
 
       final sessionId = newSession['session_id'];
@@ -61,6 +76,7 @@ class _AiChatbotScreenState extends State<AiChatbotScreen> {
         'session_id': sessionId,
         'sender_role': 'assistant',
         'content': 'Hi $_userName, I am your Investra AI\nhow can I help you today',
+        'created_at': nowStr, // send current time
       });
 
       if (mounted) {
@@ -97,7 +113,7 @@ class _AiChatbotScreenState extends State<AiChatbotScreen> {
     setState(() {
       _selectedFile = null;
       _selectedFileName = null;
-      _isSending = true; // الزرار هيبدأ يلف هنا
+      _isSending = true;
     });
 
     try {
@@ -114,12 +130,13 @@ class _AiChatbotScreenState extends State<AiChatbotScreen> {
         'content': text,
         'file_url': uploadedFileUrl,
         'file_name': fileNameToSend,
+        'created_at': DateTime.now().toIso8601String(), // send real time
       });
 
     } catch (e) {
       debugPrint("Send Error: $e");
     } finally {
-      if (mounted) setState(() => _isSending = false); // الزرار هيبطل لف فوراً
+      if (mounted) setState(() => _isSending = false);
     }
   }
 
@@ -138,7 +155,12 @@ class _AiChatbotScreenState extends State<AiChatbotScreen> {
           actions: [
             IconButton(
               icon: const Icon(Icons.history, color: AppColors.primaryColor),
-              onPressed: () {},
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const AiChatHistoryScreen()),
+                );
+              },
             )
           ],
         ),
@@ -163,7 +185,6 @@ class _AiChatbotScreenState extends State<AiChatbotScreen> {
   Widget _buildMessagesStream() {
     if (_currentSessionId == null) return const SizedBox();
     return StreamBuilder<List<Map<String, dynamic>>>(
-      // Stream بسيط ومباشر عشان يلقط التغييرات فوراً
       stream: _supabase
           .from('AI_Messages')
           .stream(primaryKey: ['message_id'])
@@ -214,7 +235,6 @@ class _AiChatbotScreenState extends State<AiChatbotScreen> {
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      // استخدام الـ Alpha بدلاً من Opacity لتجنب الـ Warnings
                       color: isAi ? AppColors.grayColor.withAlpha(40) : Colors.white.withAlpha(30),
                       borderRadius: BorderRadius.circular(10),
                     ),
@@ -300,7 +320,10 @@ class _AiChatbotScreenState extends State<AiChatbotScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.auto_awesome_outlined, color: AppColors.primaryColor),
+              leading: Container(
+                padding: const EdgeInsets.all(4),
+                child: SvgPicture.asset('assets/icons/ai_chatbot.svg', width: 20, height: 20, color: AppColors.primaryColor),
+              ),
               title: const Text("New Chat", style: TextStyle(color: AppColors.primaryColor, fontWeight: FontWeight.bold)),
               onTap: () {
                 setState(() => _isMenuOpen = false);
