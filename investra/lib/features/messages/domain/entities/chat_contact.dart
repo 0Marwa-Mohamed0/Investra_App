@@ -10,6 +10,7 @@ class ChatContact {
     this.unreadCount = 0,
     this.isOnline = false,
     this.topicLabel,
+    this.lastMessageTime,
   });
 
   final String id;
@@ -21,4 +22,5 @@ class ChatContact {
   final int unreadCount;
   final bool isOnline;
   final String? topicLabel;
+  final DateTime? lastMessageTime;
 }

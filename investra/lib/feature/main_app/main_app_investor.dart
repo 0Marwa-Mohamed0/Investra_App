@@ -4,7 +4,7 @@ import 'package:investra/core/constants/app_images.dart';
 import 'package:investra/core/styles/colors.dart';
 import 'package:investra/core/widgets/custom_svg_picture.dart';
 import 'package:investra/feature/home_page/screens/investor_home.dart';
-import 'package:investra/feature/messages/presentation/pages/messages_list_screen.dart'
+import 'package:investra/features/messages/presentation/pages/messages_list_screen.dart'
     show MessagesListScreen;
 import 'package:investra/feature/setting/screen/investor_setting_screen.dart';
 

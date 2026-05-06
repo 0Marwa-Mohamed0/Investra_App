@@ -38,7 +38,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:investra/core/styles/colors.dart';
-import 'package:investra/feature/home_page/submit/screen/submit_idea.dart';
+import 'package:investra/features/submit_idea/presentation/pages/submit_idea_screen.dart';
 
 class BuildSubmitButton extends StatelessWidget {
   const BuildSubmitButton({super.key});
@@ -61,8 +61,8 @@ class BuildSubmitButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-              color: AppColors.blackColor.withOpacity(
-                0.1,
+              color: AppColors.blackColor.withValues(
+                alpha: 0.1,
               ), // تقليل حدة الظل قليلاً ليكون احترافياً
               blurRadius: 8,
               offset: const Offset(0, 4),

@@ -4,7 +4,7 @@ import 'package:investra/core/constants/app_images.dart';
 import 'package:investra/core/styles/colors.dart';
 import 'package:investra/core/widgets/custom_svg_picture.dart';
 import 'package:investra/feature/home_page/screens/enterepreneur_home.dart';
-import 'package:investra/feature/messages/presentation/pages/messages_list_screen.dart';
+import 'package:investra/features/messages/presentation/pages/messages_list_screen.dart';
 import 'package:investra/feature/setting/screen/entrepreneur_setting_screen.dart';
 
 class MainAppEnterpreneurScreen extends StatefulWidget {
@@ -57,7 +57,7 @@ class MainAppScreenState extends State<MainAppEnterpreneurScreen> {
       EntrepreneurHomePage(scrollController: _scrollController),
 
       const Center(child: Text("AI Chatbot")),
-      MessagesListScreen(),
+      const MessagesListScreen(),
       SettingsScreen(scrollController: _scrollController),
     ];
 

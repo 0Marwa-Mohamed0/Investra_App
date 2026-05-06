@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:gap/gap.dart';
-import 'package:investra/feature/home_page/screens/enterepreneur_home.dart';
-import 'package:investra/feature/home_page/screens/investor_home.dart';
 import 'package:investra/feature/main_app/main_app_enterpreneur.dart';
 import 'package:investra/feature/main_app/main_app_investor.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';

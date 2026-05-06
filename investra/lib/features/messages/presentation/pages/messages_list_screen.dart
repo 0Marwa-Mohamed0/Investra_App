@@ -32,11 +32,21 @@ class _MessagesListScreenState extends State<MessagesListScreen> {
 
   List<ChatContact> get _visible {
     final q = _searchQuery.trim().toLowerCase();
-    if (q.isEmpty) return _all;
-    return _all.where((c) {
-      return c.fullName.toLowerCase().contains(q) ||
-          _latestPreview(c).toLowerCase().contains(q);
-    }).toList();
+    List<ChatContact> filtered = q.isEmpty
+        ? List<ChatContact>.from(_all)
+        : _all.where((c) {
+            return c.fullName.toLowerCase().contains(q) ||
+                _latestPreview(c).toLowerCase().contains(q);
+          }).toList();
+
+    // Sort by time: latest message first
+    filtered.sort((a, b) {
+      final timeA = a.lastMessageTime ?? DateTime(2000);
+      final timeB = b.lastMessageTime ?? DateTime(2000);
+      return timeB.compareTo(timeA);
+    });
+
+    return filtered;
   }
 
   @override
@@ -93,7 +103,7 @@ class _MessagesListScreenState extends State<MessagesListScreen> {
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: AppColors.blackColor,
                 ),
-                onChanged: (_) {
+                onChanged: (value) {
                   _debounce?.cancel();
                   _debounce = Timer(const Duration(milliseconds: 320), () {
                     if (mounted) {
@@ -154,7 +164,7 @@ class _MessagesListScreenState extends State<MessagesListScreen> {
                 : ListView.separated(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                     itemCount: _visible.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 6),
+                    separatorBuilder: (context, index) => const SizedBox(height: 6),
                     itemBuilder: (context, index) {
                       final c = _visible[index];
                       return MessageTile(

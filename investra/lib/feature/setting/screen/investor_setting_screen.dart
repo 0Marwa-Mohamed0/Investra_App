@@ -298,7 +298,7 @@ class AccountScreen extends StatelessWidget {
                           value: true,
                           onChanged: (val) {},
                           activeTrackColor: AppColors.darkgreen,
-                          activeThumbColor: AppColors.bgColor,
+
                         ),
                       ),
                     ),

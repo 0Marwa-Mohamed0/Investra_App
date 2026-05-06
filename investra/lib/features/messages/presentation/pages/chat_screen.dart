@@ -30,6 +30,7 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    MessagesMockDataSource.markAsRead(_user.id);
     _items = List<ChatThreadItem>.of(
       MessagesMockDataSource.initialThreadFor(_user.id),
     );
