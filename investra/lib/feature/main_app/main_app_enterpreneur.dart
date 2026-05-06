@@ -4,11 +4,14 @@ import 'package:investra/core/constants/app_images.dart';
 import 'package:investra/core/styles/colors.dart';
 import 'package:investra/core/widgets/custom_svg_picture.dart';
 import 'package:investra/feature/home_page/screens/enterepreneur_home.dart';
-import 'package:investra/feature/messages/presentation/pages/messages_list_screen.dart';
+import 'package:investra/feature/messages/presentation/pages/messages_list_screen.dart'
+    show MessagesListScreen;
 import 'package:investra/feature/setting/screen/entrepreneur_setting_screen.dart';
 import 'package:investra/feature/aiChatbot/ai_chatbot.dart';
+
 class MainAppEnterpreneurScreen extends StatefulWidget {
   const MainAppEnterpreneurScreen({super.key, this.selectedIndex});
+
   final int? selectedIndex;
 
   @override
@@ -17,8 +20,9 @@ class MainAppEnterpreneurScreen extends StatefulWidget {
 
 class MainAppScreenState extends State<MainAppEnterpreneurScreen> {
   int currentIndex = 0;
-  late ScrollController _scrollController;
   bool _isVisible = true;
+  late ScrollController _scrollController;
+  late List<Widget> screens;
 
   @override
   void initState() {
@@ -26,22 +30,16 @@ class MainAppScreenState extends State<MainAppEnterpreneurScreen> {
     currentIndex = widget.selectedIndex ?? 0;
     _scrollController = ScrollController();
 
-    // إضافة الـ Listener لمراقبة اتجاه السكرول
-    _scrollController.addListener(() {
-      if (_scrollController.position.userScrollDirection ==
-          ScrollDirection.reverse) {
-        // المستخدم ينزل لأسفل -> نخفي الشريط
-        if (_isVisible) {
-          setState(() => _isVisible = false);
-        }
-      } else if (_scrollController.position.userScrollDirection ==
-          ScrollDirection.forward) {
-        // المستخدم يطلع لأعلى -> نظهر الشريط
-        if (!_isVisible) {
-          setState(() => _isVisible = true);
-        }
-      }
-    });
+    screens = [
+      EntrepreneurHomePage(scrollController: _scrollController),
+      AiChatbotScreen(
+        onScroll: (visible) {
+          if (_isVisible != visible) setState(() => _isVisible = visible);
+        },
+      ),
+      MessagesListScreen(),
+      SettingsScreen(scrollController: _scrollController),
+    ];
   }
 
   @override
@@ -52,34 +50,29 @@ class MainAppScreenState extends State<MainAppEnterpreneurScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // تحديث القائمة لضمان استلام الـ controller
-    final List<Widget> screens = [
-      EntrepreneurHomePage(scrollController: _scrollController),
-
-
-
-      AiChatbotScreen(onScroll: (visible) {
-        if (_isVisible != visible) setState(() => _isVisible = visible);
-      }),MessagesListScreen(),
-      SettingsScreen(scrollController: _scrollController),
-    ];
-
-
     return Scaffold(
       backgroundColor: AppColors.bgColor,
-      // استخدام IndexedStack للحفاظ على حالة الصفحات
-      body: IndexedStack(index: currentIndex, children: screens),
-
-      // هنا التعديل الأساسي للحركة
+      body: NotificationListener<UserScrollNotification>(
+        onNotification: (notification) {
+          if (notification.direction == ScrollDirection.reverse) {
+            if (_isVisible) setState(() => _isVisible = false);
+          } else if (notification.direction == ScrollDirection.forward) {
+            if (!_isVisible) setState(() => _isVisible = true);
+          }
+          return true;
+        },
+        child: IndexedStack(index: currentIndex, children: screens),
+      ),
+      // استخدام AnimatedSize أو التحكم في الارتفاع مع ClipRect
       bottomNavigationBar: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut, // حركة ناعمة في الدخول والخروج
+        curve: Curves.easeInOut,
         height: _isVisible
             ? (kBottomNavigationBarHeight +
-            MediaQuery.of(context).padding.bottom)
+                  MediaQuery.of(context).padding.bottom)
             : 0,
         child: Wrap(
-          // Wrap يمنع ظهور خطأ المساحة (Overflow) عند وصول الارتفاع لصفر
+          // Wrap يمنع ظهور خطأ المساحة (Overflow) أثناء الاختفاء
           children: [_bottomNavBar()],
         ),
       ),
@@ -93,32 +86,48 @@ class MainAppScreenState extends State<MainAppEnterpreneurScreen> {
       onTap: (index) {
         setState(() {
           currentIndex = index;
-          _isVisible = true; // إظهار الشريط عند التنقل
+          _isVisible = true; // تظهر دائماً عند الضغط على أيقونة
         });
       },
       type: BottomNavigationBarType.fixed,
       selectedItemColor: AppColors.primaryColor,
       unselectedItemColor: AppColors.grayColor,
-      elevation: 12, // زيادة الـ elevation ليعطي عمقاً أفضل
-      showSelectedLabels: true,
-      showUnselectedLabels: true,
-      selectedFontSize: 12,
-      unselectedFontSize: 12,
+      elevation: 10,
       items: [
-        _buildNavItem(AppImages.homeSvg, 'Home'),
-        _buildNavItem(AppImages.aichatbotSvg, 'AI Chatbot'),
-        _buildNavItem(AppImages.chatSvg, 'Chat'),
-        _buildNavItem(AppImages.profileSvg, 'Profile'),
-      ],
-    );
-  }
+        BottomNavigationBarItem(
+          icon: CustomSvgPicture(path: AppImages.homeSvg),
+          activeIcon: CustomSvgPicture(
+            path: AppImages.homeSvg,
+            color: AppColors.primaryColor,
+          ),
+          label: 'Home',
+        ),
 
-  // دالة مساعدة لتنظيف الكود
-  BottomNavigationBarItem _buildNavItem(String path, String label) {
-    return BottomNavigationBarItem(
-      icon: CustomSvgPicture(path: path),
-      activeIcon: CustomSvgPicture(path: path, color: AppColors.primaryColor),
-      label: label,
+        BottomNavigationBarItem(
+          icon: CustomSvgPicture(path: AppImages.aichatbotSvg),
+          activeIcon: CustomSvgPicture(
+            path: AppImages.aichatbotSvg,
+            color: AppColors.primaryColor,
+          ),
+          label: 'AI Chatbot',
+        ),
+        BottomNavigationBarItem(
+          icon: CustomSvgPicture(path: AppImages.chatSvg),
+          activeIcon: CustomSvgPicture(
+            path: AppImages.chatSvg,
+            color: AppColors.primaryColor,
+          ),
+          label: 'Chat',
+        ),
+        BottomNavigationBarItem(
+          icon: CustomSvgPicture(path: AppImages.profileSvg),
+          activeIcon: CustomSvgPicture(
+            path: AppImages.profileSvg,
+            color: AppColors.primaryColor,
+          ),
+          label: 'Profile',
+        ),
+      ],
     );
   }
 }

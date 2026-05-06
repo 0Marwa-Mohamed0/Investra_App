@@ -53,9 +53,9 @@ class _MessagesListScreenState extends State<MessagesListScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      backgroundColor: AppColors.bg,
+      backgroundColor: AppColors.secondary2Color,
       appBar: AppBar(
-        backgroundColor: AppColors.bg,
+        backgroundColor: AppColors.bgColor,
         elevation: 0,
         scrolledUnderElevation: 0,
         title: Text(

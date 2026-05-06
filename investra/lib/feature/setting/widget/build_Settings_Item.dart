@@ -4,13 +4,13 @@
 // class buildSettingsItem extends StatelessWidget {
 //   const buildSettingsItem({
 //     super.key,
-//     required this.icon,
+//     required this.icon, // ✅ تم تغيير النوع لـ Widget
 //     required this.title,
 //     required this.subtitle,
 //     this.subtitleColor,
 //   });
 
-//   final IconData icon;
+//   final Widget icon; // ✅ تغيير النوع هنا لـ Widget
 //   final String title;
 //   final String subtitle;
 //   final Color? subtitleColor;
@@ -28,7 +28,8 @@
 //             color: AppColors.bgGray,
 //             borderRadius: BorderRadius.circular(8),
 //           ),
-//           child: Icon(icon, color: AppColors.grayColor),
+//           // ✅ نضع الـ icon مباشرة هنا بدون تغليفه بـ Icon()
+//           child: icon,
 //         ),
 //         title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
 //         subtitle: Text(
@@ -49,16 +50,18 @@ import 'package:investra/core/styles/colors.dart';
 class buildSettingsItem extends StatelessWidget {
   const buildSettingsItem({
     super.key,
-    required this.icon, // ✅ تم تغيير النوع لـ Widget
+    required this.icon,
     required this.title,
     required this.subtitle,
     this.subtitleColor,
+    this.onTap, // 1. إضافة الـ onTap هنا
   });
 
-  final Widget icon; // ✅ تغيير النوع هنا لـ Widget
+  final Widget icon;
   final String title;
   final String subtitle;
   final Color? subtitleColor;
+  final VoidCallback? onTap; // 2. تعريف المتغير من نوع VoidCallback
 
   @override
   Widget build(BuildContext context) {
@@ -67,13 +70,13 @@ class buildSettingsItem extends StatelessWidget {
       color: AppColors.bgColor,
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
+        onTap: onTap, // 3. ربط المتغير بخاصية الضغط في ListTile
         leading: Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
             color: AppColors.bgGray,
             borderRadius: BorderRadius.circular(8),
           ),
-          // ✅ نضع الـ icon مباشرة هنا بدون تغليفه بـ Icon()
           child: icon,
         ),
         title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),

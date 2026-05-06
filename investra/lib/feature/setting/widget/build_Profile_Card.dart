@@ -1,8 +1,20 @@
+import 'dart:io'; // مهم جداً للتعامل مع الصور من الجهاز
 import 'package:flutter/material.dart';
 import 'package:investra/core/styles/colors.dart';
 
 class BuildProfileCard extends StatelessWidget {
-  const BuildProfileCard({super.key});
+  final String name;
+  final String? imageUrl; // رابط الصورة (Network)
+  final File? imageFile; // ملف الصورة المختار من المعرض (Local)
+  final VoidCallback onEditProfile; // وظيفة الضغط لتغيير الصورة
+
+  const BuildProfileCard({
+    super.key,
+    required this.name,
+    required this.onEditProfile,
+    this.imageUrl,
+    this.imageFile,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -14,53 +26,48 @@ class BuildProfileCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Stack(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Image.network(
-                  'https://i.pinimg.com/736x/a4/be/2d/a4be2d9b169649eae96098785afad294.jpg',
-                  width: 80,
-                  height: 80,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => Container(
-                    width: 80,
-                    height: 80,
-                    color: AppColors.gray2Color,
+          // قسم الصورة مع زر التعديل
+          GestureDetector(
+            onTap: onEditProfile,
+            child: Stack(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: _buildImageWidget(),
+                ),
+                // أيقونة التعديل (القلم)
+                Positioned(
+                  bottom: 0,
+                  right: 0,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(
+                      color: AppColors.primaryColor,
+                      shape: BoxShape.circle,
+                    ),
                     child: const Icon(
-                      Icons.person,
-                      color: AppColors.gray2Color,
+                      Icons.edit,
+                      color: Colors.white,
+                      size: 14,
                     ),
                   ),
                 ),
-              ),
-              Positioned(
-                bottom: 0,
-                right: 0,
-                child: Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: const BoxDecoration(
-                    color: AppColors.primaryColor,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.edit,
-                    color: AppColors.bgColor,
-                    size: 14,
-                  ),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
           const SizedBox(width: 16),
+          // بيانات المستخدم
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text(
-                  'Esraa Alaa',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                Text(
+                  name,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
                   overflow: TextOverflow.ellipsis,
                 ),
                 const Text(
@@ -69,6 +76,7 @@ class BuildProfileCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 8),
+                // شارة ELITE FOUNDER
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 12,
@@ -93,5 +101,36 @@ class BuildProfileCard extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  // دالة مساعدة لاختيار مصدر الصورة الصحيح
+  Widget _buildImageWidget() {
+    const double size = 80;
+    const String placeholder =
+        'https://i.pinimg.com/736x/a4/be/2d/a4be2d9b169649eae96098785afad294.jpg';
+
+    if (imageFile != null) {
+      // إذا اختار المستخدم صورة من المعرض
+      return Image.file(
+        imageFile!,
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+      );
+    } else {
+      // إذا كان يستخدم رابطاً أو الصورة الافتراضية
+      return Image.network(
+        (imageUrl != null && imageUrl!.isNotEmpty) ? imageUrl! : placeholder,
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) => Container(
+          width: size,
+          height: size,
+          color: AppColors.gray2Color,
+          child: const Icon(Icons.person, color: Colors.white),
+        ),
+      );
+    }
   }
 }

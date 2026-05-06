@@ -146,7 +146,9 @@ class _LoginScreenState extends State<LoginScreen> {
     } else if (role == 'Entrepreneur') {
       Navigator.pushAndRemoveUntil(
         context,
-        MaterialPageRoute(builder: (context) => MainAppEnterpreneurScreen()),
+        MaterialPageRoute(
+          builder: (context) => const MainAppEnterpreneurScreen(),
+        ),
         (route) => false,
       );
     } else {

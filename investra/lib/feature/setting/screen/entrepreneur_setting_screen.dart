@@ -1,17 +1,84 @@
+import 'dart:io'; // مهم للتعامل مع الملفات
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
+import 'package:image_picker/image_picker.dart'; // تأكدي من إضافة المكتبة في pubspec.yaml
 import 'package:investra/core/constants/app_images.dart';
 import 'package:investra/core/styles/colors.dart';
+import 'package:investra/feature/auth/presentation/login_screen.dart';
+import 'package:investra/feature/help/screen/help_screen.dart';
+import 'package:investra/feature/notification/view/notifications_screen.dart';
 import 'package:investra/feature/setting/widget/build_Profile_Card.dart';
 import 'package:investra/feature/setting/widget/build_Progress_Card.dart';
 import 'package:investra/feature/setting/widget/build_Section_Title.dart';
 import 'package:investra/feature/setting/widget/build_Settings_Item.dart';
 import 'package:investra/feature/setting/widget/build_setting_toggle.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
   final ScrollController scrollController;
 
   const SettingsScreen({super.key, required this.scrollController});
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  File? _pickedImage;
+
+  final String defaultImageUrl =
+      'https://i.pinimg.com/736x/a4/be/2d/a4be2d9b169649eae96098785afad294.jpg';
+
+  Future<void> _pickImage() async {
+    final ImagePicker picker = ImagePicker();
+    try {
+      final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+      if (image != null) {
+        setState(() {
+          _pickedImage = File(image.path);
+        });
+      }
+    } catch (e) {
+      debugPrint("خطأ في اختيار الصورة: $e");
+    }
+  }
+
+  void _showProfileImage(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.black,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Align(
+              alignment: Alignment.topRight,
+              child: IconButton(
+                icon: const Icon(Icons.close, color: Colors.white, size: 30),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ),
+            InteractiveViewer(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: _pickedImage != null
+                    ? Image.file(_pickedImage!, fit: BoxFit.contain)
+                    : Image.network(defaultImageUrl, fit: BoxFit.contain),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // دالة لتنفيذ تسجيل الخروج (تحتاج لتعديل حسب المنطق الخاص بك)
+  void _performLogout(BuildContext context) {
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (context) => const LoginScreen()),
+      (route) => false,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -21,45 +88,44 @@ class SettingsScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: AppColors.bg,
       appBar: AppBar(
+        automaticallyImplyLeading: false,
         backgroundColor: AppColors.bgColor,
         elevation: 0,
         title: const Text(
-          'The Editorial Wealth \n Experience',
+          ' Investra',
           style: TextStyle(
             color: AppColors.primaryColor,
-            fontSize: 25,
+            fontSize: 26,
             fontWeight: FontWeight.bold,
           ),
         ),
         actions: [
-          IconButton(
-            onPressed: () {},
-            icon: SvgPicture.asset(
-              AppImages.notificationSvg,
-              colorFilter: ColorFilter.mode(
-                AppColors.primaryColor,
-                BlendMode.srcIn,
+          _buildAppBarIcon(
+            AppImages.notificationSvg,
+            () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const NotificationsScreen(),
               ),
             ),
+            size: 30,
           ),
-          IconButton(
-            onPressed: () {},
-            icon: SvgPicture.asset(
-              AppImages.helpSvg,
-              colorFilter: ColorFilter.mode(
-                AppColors.primaryColor,
-                BlendMode.srcIn,
+          _buildAppBarIcon(
+            AppImages.helpSvg,
+            () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const HelpSupportScreen(),
               ),
             ),
+            size: 22,
           ),
-          const Padding(
-            padding: EdgeInsets.only(right: 16),
-            child: CircleAvatar(
-              backgroundImage: NetworkImage(
-                'https://i.pinimg.com/736x/a4/be/2d/a4be2d9b169649eae96098785afad294.jpg',
-              ),
-            ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: () => _showProfileImage(context),
+            child: _buildProfileImage(size: 36),
           ),
+          const SizedBox(width: 16),
         ],
       ),
       body: SafeArea(
@@ -70,7 +136,7 @@ class SettingsScreen extends StatelessWidget {
           },
           child: SingleChildScrollView(
             physics: const ClampingScrollPhysics(),
-            controller: scrollController,
+            controller: widget.scrollController,
             child: Padding(
               padding: EdgeInsets.symmetric(
                 horizontal: horizontalPadding,
@@ -89,97 +155,170 @@ class SettingsScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 24),
 
-                  // --- Profile Card ---
-                  BuildProfileCard(),
+                  // Profile Card
+                  BuildProfileCard(
+                    name: 'Esraa Alaa',
+                    onEditProfile: _pickImage,
+                    imageFile: _pickedImage,
+                    imageUrl: defaultImageUrl,
+                  ),
                   const SizedBox(height: 16),
 
-                  // --- Idea Submission Limit Card ---
                   buildProgressCard(),
                   const SizedBox(height: 20),
-
-                  // --- Security Section ---
                   buildSectionTitle(title: 'SECURITY & ACCESS'),
+
                   buildSettingsItem(
-                    icon: SvgPicture.asset(
-                      AppImages.lockSvg,
-                      height: 24,
-                      width: 24,
-                      colorFilter: const ColorFilter.mode(
-                        AppColors.primaryColor,
-                        BlendMode.srcIn,
-                      ),
-                    ),
-                    title: 'Email Digests',
-                    subtitle: 'Weekly wealth summaries',
+                    icon: _buildItemSvg(AppImages.lockSvg),
+                    title: 'Password',
+                    subtitle: 'Update your login credentials',
+                    onTap: () {
+                      // الكود الخاص بفتح صفحة الـ ChangePasswordScreen هنا
+                    },
                   ),
                   buildSettingsItem(
-                    icon: SvgPicture.asset(
-                      AppImages.securitySvg,
-                      height: 24,
-                      width: 24,
-                      colorFilter: const ColorFilter.mode(
-                        AppColors.primaryColor,
-                        BlendMode.srcIn,
-                      ),
-                    ),
-                    title: 'Email Digests',
-                    subtitle: 'Weekly wealth summaries',
+                    icon: _buildItemSvg(AppImages.securitySvg),
+                    title: 'Two-Step Verification',
+                    subtitle: 'Extra layer of security',
                   ),
+
                   const SizedBox(height: 10),
                   buildSectionTitle(title: 'PREFERENCES'),
-                  // --- Preferences Section ---
+
                   CustomSettingsToggle(
-                    icon: SvgPicture.asset(
-                      AppImages.notification2Svg,
-                      height: 24,
-                      colorFilter: const ColorFilter.mode(
-                        AppColors.primaryColor,
-                        BlendMode.srcIn,
-                      ),
-                    ),
+                    icon: _buildItemSvg(AppImages.notification2Svg),
                     title: 'Push Notifications',
                     subtitle: 'Investment alerts & updates',
                     value: true,
                     onChanged: (v) {},
                   ),
 
-                  CustomSettingsToggle(
-                    icon: SvgPicture.asset(
-                      AppImages.messegeSvg,
-                      height: 24,
-                      colorFilter: const ColorFilter.mode(
-                        AppColors.primaryColor,
-                        BlendMode.srcIn,
-                      ),
-                    ),
-                    title: 'Email Digests',
-                    subtitle: 'Weekly wealth summaries',
-                    value: false,
-                    onChanged: (v) {},
-                  ),
                   const SizedBox(height: 25),
-                  // --- Sign Out Button ---
                   SizedBox(
                     width: double.infinity,
                     child: TextButton.icon(
-                      onPressed: () {},
+                      onPressed: () {
+                        showDialog(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            backgroundColor: AppColors.bg,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            title: const Text(
+                              "Sign Out",
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            content: const Text(
+                              "Are you sure you want to sign out?",
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(context),
+                                child: const Text(
+                                  "Cancel",
+                                  style: TextStyle(
+                                    color: AppColors.primaryColor,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              TextButton(
+                                onPressed: () {
+                                  Navigator.pop(context);
+                                  _performLogout(context);
+                                },
+                                child: const Text(
+                                  "Sign Out",
+                                  style: TextStyle(
+                                    color: AppColors.errorColor,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
                       icon: const Icon(
                         Icons.logout,
                         color: AppColors.errorColor,
                       ),
                       label: const Text(
-                        'Sign Out from All Devices',
-                        style: TextStyle(color: AppColors.errorColor),
+                        'Sign Out',
+                        style: TextStyle(
+                          color: AppColors.errorColor,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       style: TextButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 16),
                       ),
                     ),
                   ),
+                  const SizedBox(height: 100),
                 ],
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  // --- دوال مساعدة لتقليل تكرار الكود ---
+
+  Widget _buildItemSvg(String path) {
+    return SvgPicture.asset(
+      path,
+      height: 24,
+      width: 24,
+      colorFilter: const ColorFilter.mode(
+        AppColors.primaryColor,
+        BlendMode.srcIn,
+      ),
+    );
+  }
+
+  Widget _buildProfileImage({double size = 90, bool showEditIcon = false}) {
+    return Stack(
+      alignment: Alignment.bottomRight,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(size * 0.22),
+          child: _pickedImage != null
+              ? Image.file(
+                  _pickedImage!,
+                  width: size,
+                  height: size,
+                  fit: BoxFit.cover,
+                )
+              : Image.network(
+                  defaultImageUrl,
+                  width: size,
+                  height: size,
+                  fit: BoxFit.cover,
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAppBarIcon(
+    String iconPath,
+    VoidCallback onTap, {
+    double size = 24,
+  }) {
+    return IconButton(
+      onPressed: onTap,
+      icon: SvgPicture.asset(
+        iconPath,
+        height: size,
+        width: size,
+        colorFilter: const ColorFilter.mode(
+          AppColors.primaryColor,
+          BlendMode.srcIn,
         ),
       ),
     );

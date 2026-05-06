@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:investra/feature/main_app/main_app_enterpreneur.dart';
+import 'package:investra/feature/main_app/main_app_investor.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'feature/splash/screen/splash_screen.dart';
 
@@ -15,6 +17,7 @@ Future<void> main() async {
 
   runApp(const InvestraApp());
 }
+
 class InvestraApp extends StatelessWidget {
   const InvestraApp({super.key});
 
@@ -27,7 +30,7 @@ class InvestraApp extends StatelessWidget {
         fontFamily: 'DMSerif',
         primaryColor: const Color(0xFF1E4D7B),
       ),
-      home: const SplashScreen(),
+      home: const MainAppInvestorScreen(),
     );
   }
 }

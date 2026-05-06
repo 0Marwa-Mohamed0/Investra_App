@@ -32,9 +32,11 @@ class MainAppScreenState extends State<MainAppInvestorScreen> {
     screens = [
       InvestorHomePage(scrollController: _scrollController),
       const MessagesListScreen(),
-      AiChatbotScreen(onScroll: (visible) {
-        if (_isVisible != visible) setState(() => _isVisible = visible);
-      }),
+      AiChatbotScreen(
+        onScroll: (visible) {
+          if (_isVisible != visible) setState(() => _isVisible = visible);
+        },
+      ),
       AccountScreen(scrollController: _scrollController),
     ];
   }
@@ -99,14 +101,7 @@ class MainAppScreenState extends State<MainAppInvestorScreen> {
           ),
           label: 'Home',
         ),
-        BottomNavigationBarItem(
-          icon: CustomSvgPicture(path: AppImages.chatSvg),
-          activeIcon: CustomSvgPicture(
-            path: AppImages.chatSvg,
-            color: AppColors.primaryColor,
-          ),
-          label: 'Chat',
-        ),
+
         BottomNavigationBarItem(
           icon: CustomSvgPicture(path: AppImages.aichatbotSvg),
           activeIcon: CustomSvgPicture(
@@ -114,6 +109,14 @@ class MainAppScreenState extends State<MainAppInvestorScreen> {
             color: AppColors.primaryColor,
           ),
           label: 'AI Chatbot',
+        ),
+        BottomNavigationBarItem(
+          icon: CustomSvgPicture(path: AppImages.chatSvg),
+          activeIcon: CustomSvgPicture(
+            path: AppImages.chatSvg,
+            color: AppColors.primaryColor,
+          ),
+          label: 'Chat',
         ),
         BottomNavigationBarItem(
           icon: CustomSvgPicture(path: AppImages.profileSvg),
