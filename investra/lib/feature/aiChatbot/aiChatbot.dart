@@ -4,7 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:investra/core/styles/colors.dart';
 import 'package:intl/intl.dart';
-import 'package:investra/feature/aiChatbot/ai_chat_history.dart';
+import 'package:investra/feature/aiChatbot/aiChatHistory.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 class AiChatbotScreen extends StatefulWidget {
@@ -41,8 +41,8 @@ class _AiChatbotScreenState extends State<AiChatbotScreen> {
       final user = _supabase.auth.currentUser;
       if (user == null) return;
 
-      final userData = await _supabase.from('User').select('name').eq('userid', user.id).maybeSingle();
-      if (userData != null) setState(() => _userName = userData['name']);
+      final userData = await _supabase.from('User').select('FullName').eq('userid', user.id).maybeSingle();
+      if (userData != null) setState(() => _userName = userData['FullName']);
 
       if (widget.existingSessionId != null) {
         setState(() {

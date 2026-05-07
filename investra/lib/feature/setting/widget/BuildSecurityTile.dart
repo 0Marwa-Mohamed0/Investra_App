@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:investra/core/styles/colors.dart';
-import 'package:investra/feature/setting/widget/build_Icon_Container.dart';
+import 'package:investra/feature/setting/widget/BuildIconContainer.dart';
 
 class buildSecurityTile extends StatelessWidget {
   const buildSecurityTile({
@@ -10,7 +10,7 @@ class buildSecurityTile extends StatelessWidget {
     required this.subtitle,
     this.subtitleColor,
     this.trailing,
-    this.onTap, // 1. أضفنا الـ onTap هنا
+    this.onTap,
   });
 
   final Widget icon;
@@ -18,12 +18,12 @@ class buildSecurityTile extends StatelessWidget {
   final String subtitle;
   final Color? subtitleColor;
   final Widget? trailing;
-  final VoidCallback? onTap; // 2. تعريف النوع كـ دالة
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      // 3. تغليف بـ InkWell لإضافة تأثير الضغط (Ripple Effect)
+
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: Container(
@@ -31,7 +31,7 @@ class buildSecurityTile extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(12),
-          // اختياري: إضافة shadow خفيف ليطابق الصورة
+
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.03),
@@ -60,7 +60,7 @@ class buildSecurityTile extends StatelessWidget {
                       ),
                       if (trailing != null) ...[
                         const SizedBox(width: 8),
-                        trailing!, // عرض الـ trailing إذا وجد
+                        trailing!,
                       ],
                     ],
                   ),

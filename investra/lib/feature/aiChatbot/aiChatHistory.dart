@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:investra/core/styles/colors.dart';
-import 'package:investra/feature/aiChatbot/ai_chatbot.dart';
+import 'package:investra/feature/aiChatbot/aiChatbot.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 class AiChatHistoryScreen extends StatefulWidget {

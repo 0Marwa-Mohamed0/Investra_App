@@ -2,18 +2,32 @@ import 'package:flutter/material.dart';
 import 'package:investra/core/styles/colors.dart';
 
 class BuildPostcard extends StatelessWidget {
+  final String category;
+  final String title;
+  final String description;
+  final double rating;
+  final VoidCallback? onTap;
+
   const BuildPostcard({
     super.key,
     required this.category,
     required this.title,
     required this.description,
-    required this.members,
+    required this.rating,
+    this.onTap,
   });
 
-  final String category;
-  final String title;
-  final String description;
-  final String members;
+  Widget _buildRatingStars(double rating) {
+    List<Widget> stars = [];
+    for (int i = 1; i <= 5; i++) {
+      stars.add(Icon(
+        i <= rating ? Icons.star : (i - rating < 1 ? Icons.star_half : Icons.star_border),
+        size: 14,
+        color: AppColors.yellowColor,
+      ));
+    }
+    return Row(children: stars);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -30,91 +44,34 @@ class BuildPostcard extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
-                  color: AppColors.bgColor,
+                  color: AppColors.secondary2Color,
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
                   category,
-                  style: const TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.primaryColor,
-                  ),
+                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.primaryColor),
                 ),
               ),
-              Row(
-                children: [
-                  Icon(Icons.star, size: 14, color: AppColors.yellowColor),
-                  Icon(Icons.star, size: 14, color: AppColors.yellowColor),
-                  Icon(Icons.star, size: 14, color: AppColors.yellowColor),
-                  Icon(Icons.star, size: 14, color: AppColors.yellowColor),
-                  Icon(Icons.star_border, size: 14, color: AppColors.yellowColor),
-                ],
-              )
+              _buildRatingStars(rating),
             ],
           ),
           const SizedBox(height: 10),
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.w700,
-              color: AppColors.darkGray,
-            ),
-          ),
+          Text(title, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: AppColors.darkGray)),
           const SizedBox(height: 8),
-          Text(
-            description,
-            style: const TextStyle(
-              fontSize: 14,
-              height: 1.5,
-              color: AppColors.gray2Color,
-            ),
-          ),
+          Text(description, maxLines: 3, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, color: AppColors.gray2Color)),
           const SizedBox(height: 14),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  const CircleAvatar(radius: 10),
-                  const SizedBox(width: 4),
-                  const CircleAvatar(radius: 10),
-                  const SizedBox(width: 6),
-                  Text(
-                    members,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.darkGray,
-                    ),
-                  )
-                ],
+          Align(
+            alignment: Alignment.centerRight,
+            child: ElevatedButton(
+              onPressed: onTap,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primaryColor,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.primaryColor,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Text(
-                  'View Details',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: AppColors.bgColor,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              )
-            ],
+              child: const Text('View Details', style: TextStyle(color: Colors.white, fontSize: 13)),
+            ),
           )
         ],
       ),

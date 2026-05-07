@@ -38,7 +38,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:investra/core/styles/colors.dart';
-import 'package:investra/feature/home_page/submit/screen/submit_idea.dart';
+import 'package:investra/feature/home_page/submit/screen/submitIdea.dart';
 
 class BuildSubmitButton extends StatelessWidget {
   const BuildSubmitButton({super.key});

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:investra/core/constants/app_images.dart';
 import 'package:investra/core/styles/colors.dart';
 import 'package:investra/core/widgets/custom_svg_picture.dart';
-import 'package:investra/feature/home_page/submit/widget/submit_button.dart';
+import 'package:investra/feature/home_page/submit/widget/submitButton.dart';
 
 /// Multi-step idea submission form aligned with app design tokens.
 class SubmitIdeaScreen extends StatefulWidget {

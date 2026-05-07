@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:investra/core/styles/colors.dart';
-import 'package:investra/feature/setting/widget/build_Icon_Container.dart';
+import 'package:investra/feature/setting/widget/BuildIconContainer.dart';
 
 class HelpSupportScreen extends StatelessWidget {
   const HelpSupportScreen({super.key});

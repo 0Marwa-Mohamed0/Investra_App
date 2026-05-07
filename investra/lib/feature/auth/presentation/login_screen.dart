@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:gap/gap.dart';
-import 'package:investra/feature/home_page/screens/enterepreneur_home.dart';
-import 'package:investra/feature/home_page/screens/investor_home.dart';
-import 'package:investra/feature/main_app/main_app_enterpreneur.dart';
-import 'package:investra/feature/main_app/main_app_investor.dart';
+import 'package:investra/feature/main_app/mainAppEnterpreneur.dart';
+import 'package:investra/feature/main_app/mainAppInvestor.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'register_screen.dart';
 
@@ -50,17 +48,22 @@ class _LoginScreenState extends State<LoginScreen> {
 
       final user = response.user;
       if (user != null) {
-        //  Trigger
+        // --- تحديث الـ last_login عند النجاح ---
+        await Supabase.instance.client
+            .from('User')
+            .update({'last_login': DateTime.now().toIso8601String()})
+            .eq('userid', user.id);
+        // ------------------------------------
+
         await Future.delayed(const Duration(seconds: 1));
 
-        // 2.  نوع المستخدم من جدول User
+        // 2. نوع المستخدم من جدول User
         var data = await Supabase.instance.client
             .from('User')
             .select('role')
             .eq('userid', user.id)
             .maybeSingle();
 
-        // slow trigger
         if (data == null) {
           await Future.delayed(const Duration(seconds: 1));
           data = await Supabase.instance.client
@@ -83,15 +86,11 @@ class _LoginScreenState extends State<LoginScreen> {
               backgroundColor: Colors.green,
             ),
           );
-
-          // role direc
           _navigateBasedOnRole(userRole);
         }
       }
     } on AuthException catch (error) {
       String errorMessage = error.message;
-
-      // login cred
       if (error.message == 'Invalid login credentials') {
         errorMessage = 'Wrong email or password. Please try again.';
       } else if (error.message.contains('Email not confirmed')) {
@@ -141,7 +140,7 @@ class _LoginScreenState extends State<LoginScreen> {
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (context) => const MainAppInvestorScreen()),
-        (route) => false,
+            (route) => false,
       );
     } else if (role == 'Entrepreneur') {
       Navigator.pushAndRemoveUntil(
@@ -149,35 +148,13 @@ class _LoginScreenState extends State<LoginScreen> {
         MaterialPageRoute(
           builder: (context) => const MainAppEnterpreneurScreen(),
         ),
-        (route) => false,
+            (route) => false,
       );
     } else {
-      // في حال وجود دور غير معروف
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('خطأ في تحديد نوع الحساب، يرجى التواصل مع الدعم'),
           backgroundColor: Colors.orange,
-        ),
-      );
-    }
-
-    if (role == 'Investor') {
-      print("go to investor home page...");
-      // Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (context) => const InvestorHomePage()), (route) => false);
-    } else if (role == 'Entrepreneur') {
-      print("go to Entrepreneur home page ...");
-      // Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (context) => const EntrepreneurHomePage()), (route) => false);
-    } else {
-      // في حال كانت القيمة غير متوقعة أو غير موجودة
-      print("Role غير معروف: $role");
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'خطأ في تحديد نوع الحساب، يرجى تسجيل الدخول مرة أخرى مؤقتاً',
-          ),
-          backgroundColor: Colors.orange,
-          duration: Duration(seconds: 4),
         ),
       );
     }
@@ -279,21 +256,21 @@ class _LoginScreenState extends State<LoginScreen> {
                       onPressed: _isLoading ? null : _login,
                       child: _isLoading
                           ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
-                                strokeWidth: 2,
-                              ),
-                            )
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
                           : const Text(
-                              "Log In",
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                              ),
-                            ),
+                        "Log In",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
                     ),
                     const Gap(40),
                     const Row(
@@ -415,12 +392,12 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Widget _buildTextField(
-    TextEditingController controller,
-    String hint,
-    IconData icon, {
-    bool isPass = false,
-    VoidCallback? onToggleVisibility,
-  }) {
+      TextEditingController controller,
+      String hint,
+      IconData icon, {
+        bool isPass = false,
+        VoidCallback? onToggleVisibility,
+      }) {
     return TextField(
       controller: controller,
       obscureText: isPass,
@@ -435,14 +412,14 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
         suffixIcon: onToggleVisibility != null
             ? IconButton(
-                icon: Icon(
-                  isPass
-                      ? Icons.visibility_off_outlined
-                      : Icons.visibility_outlined,
-                  color: Colors.grey,
-                ),
-                onPressed: onToggleVisibility,
-              )
+          icon: Icon(
+            isPass
+                ? Icons.visibility_off_outlined
+                : Icons.visibility_outlined,
+            color: Colors.grey,
+          ),
+          onPressed: onToggleVisibility,
+        )
             : null,
       ),
     );

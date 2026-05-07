@@ -9,22 +9,33 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  # التعامل مع أيقونات الـ SVG في الـ AppBar والواجهات
   flutter_svg: ^2.2.3
+  # تنظيم المسافات بين الـ Widgets بسهولة
   gap: ^3.0.1
+  # طلبات الـ API (لو هتحتاجيها بجانب Supabase)
   dio: ^5.9.2
+  # عرض الصور من الإنترنت مع التخزين المؤقت (Caching)
   cached_network_image: ^3.4.1
+  # الأساسي لرفع صورة البروفايل (من الكاميرا أو الجاليري)
   image_picker: ^1.2.1
-  file_picker: ^8.1.2 #files from phone
+  # لاختيار ملفات أخرى من الهاتف
+  file_picker: ^8.1.2
+  # الربط مع الداتابيز والـ Storage لرفع الصور
   supabase_flutter: ^2.12.4
+  # تنسيق التاريخ والوقت
   intl: ^0.20.2
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  # توليد أيقونات التطبيق تلقائياً
   flutter_launcher_icons: ^0.13.1
+  # إنشاء شاشة الـ Splash Screen
   flutter_native_splash: ^2.4.0
 
+# إعدادات أيقونة التطبيق (Investra)
 flutter_launcher_icons:
   android: "launcher_icon"
   ios: true
@@ -34,6 +45,7 @@ flutter_launcher_icons:
   adaptive_icon_foreground: "assets/images/logo22.png"
   adaptive_icon_foreground_inset: 15
 
+# إعدادات شاشة البداية (Splash)
 flutter_native_splash:
   color: "#FFFFFF"
   image: assets/images/logo22.png
@@ -45,12 +57,14 @@ flutter_native_splash:
 
 flutter:
   uses-material-design: true
+
+  # تأكدي إن المجلدات دي موجودة فعلاً في مشروعك بنفس المسميات
   assets:
     - assets/images/
     - assets/icons/
+
+  # إعداد الخط الخاص بالتطبيق
   fonts:
     - family: DMSerif
       fonts:
         - asset: assets/fonts/DMSerifDisplay-Regular.ttf
-
-    

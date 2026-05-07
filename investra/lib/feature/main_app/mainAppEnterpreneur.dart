@@ -3,11 +3,11 @@ import 'package:flutter/rendering.dart';
 import 'package:investra/core/constants/app_images.dart';
 import 'package:investra/core/styles/colors.dart';
 import 'package:investra/core/widgets/custom_svg_picture.dart';
-import 'package:investra/feature/home_page/screens/enterepreneur_home.dart';
+import 'package:investra/feature/home_page/screens/enterepreneurHome.dart';
 import 'package:investra/feature/messages/presentation/pages/messages_list_screen.dart'
     show MessagesListScreen;
-import 'package:investra/feature/setting/screen/entrepreneur_setting_screen.dart';
-import 'package:investra/feature/aiChatbot/ai_chatbot.dart';
+import 'package:investra/feature/setting/screen/unified_settings_screen.dart';
+import 'package:investra/feature/aiChatbot/aiChatbot.dart';
 
 class MainAppEnterpreneurScreen extends StatefulWidget {
   const MainAppEnterpreneurScreen({super.key, this.selectedIndex});
@@ -38,7 +38,8 @@ class MainAppScreenState extends State<MainAppEnterpreneurScreen> {
         },
       ),
       MessagesListScreen(),
-      SettingsScreen(scrollController: _scrollController),
+
+      UnifiedSettingsScreen(scrollController: _scrollController),
     ];
   }
 
@@ -69,7 +70,7 @@ class MainAppScreenState extends State<MainAppEnterpreneurScreen> {
         curve: Curves.easeInOut,
         height: _isVisible
             ? (kBottomNavigationBarHeight +
-                  MediaQuery.of(context).padding.bottom)
+            MediaQuery.of(context).padding.bottom)
             : 0,
         child: Wrap(
           // Wrap يمنع ظهور خطأ المساحة (Overflow) أثناء الاختفاء

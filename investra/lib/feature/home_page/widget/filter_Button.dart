@@ -27,12 +27,12 @@ class FilterButton extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
+            const SizedBox(width: 12),
             Text(
               text,
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
-                height: 1.0,
                 color: selected ? AppColors.bgColor : AppColors.primaryColor,
               ),
             ),
@@ -45,9 +45,64 @@ class FilterButton extends StatelessWidget {
                 BlendMode.srcIn,
               ),
             ),
+            const SizedBox(width: 12),
           ],
         ),
       ),
+    );
+  }
+}
+
+// --- الويدجت اللي بيجمع الفلاتر في الهوم ---
+class BuildFilters extends StatelessWidget {
+  final String selectedCategory;
+  final double selectedRating;
+  final Function(String) onCategoryChanged;
+  final Function(double) onRatingChanged;
+
+  const BuildFilters({
+    super.key,
+    required this.selectedCategory,
+    required this.selectedRating,
+    required this.onCategoryChanged,
+    required this.onRatingChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        // فلتر الأقسام (Category)
+        Expanded(
+          child: PopupMenuButton<String>(
+            onSelected: onCategoryChanged,
+            itemBuilder: (context) => ['All', 'Technology', 'Fintech', 'Healthtech', 'AI']
+                .map((cat) => PopupMenuItem(value: cat, child: Text(cat)))
+                .toList(),
+            child: FilterButton(
+              text: selectedCategory == 'All' ? 'Categories' : selectedCategory,
+              selected: selectedCategory != 'All',
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        // فلتر التقييم (AI Rating)
+        Expanded(
+          child: PopupMenuButton<double>(
+            onSelected: onRatingChanged,
+            itemBuilder: (context) => [0.0, 3.0, 4.0, 4.5]
+                .map((rate) => PopupMenuItem(
+              value: rate,
+              child: Text(rate == 0.0 ? 'All Ratings' : '$rate+ Stars'),
+            ))
+                .toList(),
+            child: FilterButton(
+              text: selectedRating == 0.0 ? 'AI Rating' : '$selectedRating+',
+              selected: selectedRating > 0,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
