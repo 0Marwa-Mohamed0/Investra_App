@@ -1,10 +1,9 @@
 import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:investra/core/constants/app_images.dart';
 import 'package:investra/core/styles/colors.dart';
 import 'package:investra/core/widgets/custom_svg_picture.dart';
-import 'package:investra/features/messages/data/messages_mock_data_source.dart';
+import 'package:investra/features/messages/data/chat_supabase_service.dart'; // ← جديد
 import 'package:investra/features/messages/domain/entities/chat_contact.dart';
 import 'package:investra/features/messages/presentation/pages/chat_screen.dart';
 import 'package:investra/features/messages/presentation/widgets/message_tile.dart';
@@ -17,29 +16,47 @@ class MessagesListScreen extends StatefulWidget {
 }
 
 class _MessagesListScreenState extends State<MessagesListScreen> {
-  final List<ChatContact> _all = MessagesMockDataSource.allContacts;
+  final _service = ChatSupabaseService();
+  List<ChatContact> _contacts = [];
+  bool _loading = true;
+
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocus = FocusNode();
   Timer? _debounce;
   String _searchQuery = '';
 
-  String _latestPreview(ChatContact contact) {
-    return MessagesMockDataSource.lastMessagePreviewFor(
-      contact.id,
-      fallback: contact.lastMessagePreview,
-    );
+  @override
+  void initState() {
+    super.initState();
+    _loadChats(); // ← جديد
   }
+
+
+  Future<void> _loadChats() async {
+    try {
+      final data = await _service.fetchChats();
+      if (mounted) {
+        setState(() {
+          _contacts = data;
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  String _latestPreview(ChatContact contact) => contact.lastMessagePreview;
 
   List<ChatContact> get _visible {
     final q = _searchQuery.trim().toLowerCase();
     List<ChatContact> filtered = q.isEmpty
-        ? List<ChatContact>.from(_all)
-        : _all.where((c) {
-            return c.fullName.toLowerCase().contains(q) ||
-                _latestPreview(c).toLowerCase().contains(q);
-          }).toList();
+        ? List<ChatContact>.from(_contacts)
+        : _contacts.where((c) {
+      return c.fullName.toLowerCase().contains(q) ||
+          _latestPreview(c).toLowerCase().contains(q);
+    }).toList();
 
-    // Sort by time: latest message first
     filtered.sort((a, b) {
       final timeA = a.lastMessageTime ?? DateTime(2000);
       final timeB = b.lastMessageTime ?? DateTime(2000);
@@ -152,38 +169,43 @@ class _MessagesListScreenState extends State<MessagesListScreen> {
             ),
           ),
           Expanded(
-            child: _visible.isEmpty
+            child: _loading
+            // ↓ شاشة تحميل
+                ? const Center(child: CircularProgressIndicator())
+                : _visible.isEmpty
                 ? Center(
-                    child: Text(
-                      'No matches',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: AppColors.gray2Color,
-                      ),
-                    ),
-                  )
-                : ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                    itemCount: _visible.length,
-                    separatorBuilder: (context, index) => const SizedBox(height: 6),
-                    itemBuilder: (context, index) {
-                      final c = _visible[index];
-                      return MessageTile(
-                        contact: c,
-                        lastMessagePreview: _latestPreview(c),
-                        onTap: () async {
-                          await Navigator.push<void>(
-                            context,
-                            MaterialPageRoute<void>(
-                              builder: (context) => ChatScreen(user: c),
-                            ),
-                          );
-                          if (mounted) {
-                            setState(() {});
-                          }
-                        },
+              child: Text(
+                'No matches',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: AppColors.gray2Color,
+                ),
+              ),
+            )
+                : RefreshIndicator(
+              onRefresh: _loadChats, // ← سحب للتحديث
+              child: ListView.separated(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                itemCount: _visible.length,
+                separatorBuilder: (_, __) =>
+                const SizedBox(height: 6),
+                itemBuilder: (context, index) {
+                  final c = _visible[index];
+                  return MessageTile(
+                    contact: c,
+                    lastMessagePreview: _latestPreview(c),
+                    onTap: () async {
+                      await Navigator.push<void>(
+                        context,
+                        MaterialPageRoute<void>(
+                          builder: (_) => ChatScreen(user: c),
+                        ),
                       );
+                      if (mounted) _loadChats();
                     },
-                  ),
+                  );
+                },
+              ),
+            ),
           ),
         ],
       ),

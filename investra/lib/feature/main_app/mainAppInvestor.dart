@@ -3,10 +3,12 @@ import 'package:flutter/rendering.dart';
 import 'package:investra/core/constants/app_images.dart';
 import 'package:investra/core/styles/colors.dart';
 import 'package:investra/core/widgets/custom_svg_picture.dart';
-import 'package:investra/feature/home_page/screens/investor_home.dart';
-import 'package:investra/features/messages/presentation/pages/messages_list_screen.dart'
-    show MessagesListScreen;
-import 'package:investra/feature/setting/screen/investor_setting_screen.dart';
+import 'package:investra/feature/home_page/screens/investorHome.dart';
+
+import 'package:investra/feature/setting/screen/unified_settings_screen.dart';
+import 'package:investra/feature/aiChatbot/aiChatbot.dart';
+
+import '../../features/messages/presentation/pages/messages_list_screen.dart';
 
 class MainAppInvestorScreen extends StatefulWidget {
   const MainAppInvestorScreen({super.key, this.selectedIndex});
@@ -30,10 +32,13 @@ class MainAppScreenState extends State<MainAppInvestorScreen> {
 
     screens = [
       InvestorHomePage(scrollController: _scrollController),
-
-      MessagesListScreen(),
-      const Center(child: Text("AI Chatbot")),
-      AccountScreen(scrollController: _scrollController),
+      AiChatbotScreen(
+        onScroll: (visible) {
+          if (_isVisible != visible) setState(() => _isVisible = visible);
+        },
+      ),
+      const MessagesListScreen(),
+      UnifiedSettingsScreen(scrollController: _scrollController),
     ];
   }
 
@@ -58,16 +63,14 @@ class MainAppScreenState extends State<MainAppInvestorScreen> {
         },
         child: IndexedStack(index: currentIndex, children: screens),
       ),
-      // استخدام AnimatedSize أو التحكم في الارتفاع مع ClipRect
       bottomNavigationBar: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
         height: _isVisible
             ? (kBottomNavigationBarHeight +
-                  MediaQuery.of(context).padding.bottom)
+            MediaQuery.of(context).padding.bottom)
             : 0,
         child: Wrap(
-          // Wrap يمنع ظهور خطأ المساحة (Overflow) أثناء الاختفاء
           children: [_bottomNavBar()],
         ),
       ),
@@ -81,7 +84,7 @@ class MainAppScreenState extends State<MainAppInvestorScreen> {
       onTap: (index) {
         setState(() {
           currentIndex = index;
-          _isVisible = true; // تظهر دائماً عند الضغط على أيقونة
+          _isVisible = true;
         });
       },
       type: BottomNavigationBarType.fixed,
@@ -97,14 +100,7 @@ class MainAppScreenState extends State<MainAppInvestorScreen> {
           ),
           label: 'Home',
         ),
-        BottomNavigationBarItem(
-          icon: CustomSvgPicture(path: AppImages.chatSvg),
-          activeIcon: CustomSvgPicture(
-            path: AppImages.chatSvg,
-            color: AppColors.primaryColor,
-          ),
-          label: 'Chat',
-        ),
+
         BottomNavigationBarItem(
           icon: CustomSvgPicture(path: AppImages.aichatbotSvg),
           activeIcon: CustomSvgPicture(
@@ -112,6 +108,14 @@ class MainAppScreenState extends State<MainAppInvestorScreen> {
             color: AppColors.primaryColor,
           ),
           label: 'AI Chatbot',
+        ),
+        BottomNavigationBarItem(
+          icon: CustomSvgPicture(path: AppImages.chatSvg),
+          activeIcon: CustomSvgPicture(
+            path: AppImages.chatSvg,
+            color: AppColors.primaryColor,
+          ),
+          label: 'Chat',
         ),
         BottomNavigationBarItem(
           icon: CustomSvgPicture(path: AppImages.profileSvg),

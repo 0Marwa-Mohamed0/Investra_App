@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:investra/core/styles/colors.dart';
 
-class buildSectionTitle extends StatelessWidget {
-  const buildSectionTitle({super.key, required this.title});
-
+class BuildSectionTitle extends StatelessWidget {
+  const BuildSectionTitle({super.key, required this.title});
   final String title;
 
   @override

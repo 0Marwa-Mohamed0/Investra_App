@@ -2,13 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:investra/core/constants/app_images.dart';
 import 'package:investra/core/styles/colors.dart';
 import 'package:investra/core/widgets/custom_svg_picture.dart';
-import 'package:investra/features/messages/data/messages_mock_data_source.dart';
+import 'package:investra/features/messages/data/chat_supabase_service.dart'; // ← جديد
 import 'package:investra/features/messages/domain/entities/chat_contact.dart';
 import 'package:investra/features/messages/domain/entities/chat_message.dart';
 import 'package:investra/features/messages/domain/entities/chat_thread_item.dart';
 import 'package:investra/features/messages/presentation/widgets/chat_bubble.dart';
 import 'package:investra/features/messages/presentation/widgets/chat_attachment_bottom_sheet.dart';
 import 'package:investra/features/messages/presentation/widgets/message_input_bar.dart';
+import 'package:supabase_flutter/supabase_flutter.dart'; // ← جديد
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key, required this.user});
@@ -22,26 +23,75 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _messageController = TextEditingController();
+  final ChatSupabaseService _service = ChatSupabaseService(); // ← جديد
+
   late List<ChatThreadItem> _items;
   bool _showJumpToLatest = false;
+  bool _loading = true; // ← جديد
+  RealtimeChannel? _channel; // ← جديد
 
   ChatContact get _user => widget.user;
 
   @override
   void initState() {
     super.initState();
-    MessagesMockDataSource.markAsRead(_user.id);
-    _items = List<ChatThreadItem>.of(
-      MessagesMockDataSource.initialThreadFor(_user.id),
-    );
+    _items = [];
     _scrollController.addListener(_handleScroll);
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => _scrollToBottom(animated: false),
+    _loadMessages(); // ← جديد
+    _subscribeRealtime(); // ← جديد
+  }
+
+  // ↓ جديد: جيب الرسايل من Supabase
+  Future<void> _loadMessages() async {
+    try {
+      final msgs = await _service.fetchMessages(_user.id);
+      if (!mounted) return;
+
+      final List<ChatThreadItem> items = [];
+      String? lastDate;
+
+      for (final msg in msgs) {
+        // استخرج التاريخ من الـ timeLabel — هنستخدم today/yesterday بشكل مبسط
+        final dateLabel = 'TODAY';
+        if (lastDate != dateLabel) {
+          items.add(ChatDateSeparatorItem(dateLabel));
+          lastDate = dateLabel;
+        }
+        items.add(ChatMessageItem(msg));
+      }
+
+      setState(() {
+        _items = items;
+        _loading = false;
+      });
+
+      WidgetsBinding.instance.addPostFrameCallback(
+            (_) => _scrollToBottom(animated: false),
+      );
+    } catch (e) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  // ↓ جديد: استنى رسايل جديدة بالـ Realtime
+  void _subscribeRealtime() {
+    _channel = _service.subscribeToMessages(
+      chatId: _user.id,
+      onNewMessage: (msg) {
+        if (!mounted) return;
+        // متضيفش رسايلك انت تاني (بعتها بالفعل في _send)
+        if (msg.isFromUser) return;
+        setState(() => _items.add(ChatMessageItem(msg)));
+        WidgetsBinding.instance.addPostFrameCallback(
+              (_) => _scrollToBottom(animated: true),
+        );
+      },
     );
   }
 
   @override
   void dispose() {
+    _channel?.unsubscribe(); // ← جديد
     _scrollController.removeListener(_handleScroll);
     _scrollController.dispose();
     _messageController.dispose();
@@ -72,6 +122,39 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  // ↓ بدلنا _send لترفع على Supabase
+  Future<void> _send() async {
+    final t = _messageController.text.trim();
+    if (t.isEmpty) return;
+
+    _messageController.clear();
+
+    // أضف الرسالة فورًا على الشاشة
+    final optimisticMsg = ChatMessage(
+      id: 'local_${DateTime.now().microsecondsSinceEpoch}',
+      text: t,
+      isFromUser: true,
+      timeLabel: _timeNow(),
+      isRead: false,
+    );
+
+    setState(() => _items.add(ChatMessageItem(optimisticMsg)));
+    WidgetsBinding.instance.addPostFrameCallback(
+          (_) => _scrollToBottom(animated: true),
+    );
+
+    // ابعتها على Supabase
+    try {
+      await _service.sendMessage(chatId: _user.id, text: t);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('فشل الإرسال: $e')),
+        );
+      }
+    }
+  }
+
   String _timeNow() {
     final t = DateTime.now();
     final h24 = t.hour;
@@ -83,39 +166,6 @@ class _ChatScreenState extends State<ChatScreen> {
         : h24;
     final ampm = h24 < 12 ? 'AM' : 'PM';
     return '$h12:${m.toString().padLeft(2, '0')} $ampm';
-  }
-
-  void _send() {
-    final t = _messageController.text.trim();
-    if (t.isEmpty) return;
-    final sentAt = _timeNow();
-
-    MessagesMockDataSource.appendUserMessage(
-      contactId: _user.id,
-      text: t,
-      timeLabel: sentAt,
-    );
-
-    setState(() {
-      _messageController.clear();
-      _items.add(
-        ChatMessageItem(
-          ChatMessage(
-            id: 'm_${DateTime.now().microsecondsSinceEpoch}_local',
-            text: t,
-            isFromUser: true,
-            timeLabel: sentAt,
-            isRead: true,
-          ),
-        ),
-      );
-    });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _scrollToBottom(animated: true);
-      if (_showJumpToLatest) {
-        setState(() => _showJumpToLatest = false);
-      }
-    });
   }
 
   @override
@@ -200,7 +250,10 @@ class _ChatScreenState extends State<ChatScreen> {
         children: [
           ProjectTopicBanner(text: topic),
           Expanded(
-            child: Stack(
+            child: _loading
+            // ↓ شاشة تحميل
+                ? const Center(child: CircularProgressIndicator())
+                : Stack(
               clipBehavior: Clip.none,
               children: [
                 ListView.builder(
@@ -255,7 +308,8 @@ class _ChatScreenState extends State<ChatScreen> {
                                 const SizedBox(width: 4),
                                 Text(
                                   '1 New Message',
-                                  style: theme.textTheme.labelSmall?.copyWith(
+                                  style:
+                                  theme.textTheme.labelSmall?.copyWith(
                                     color: AppColors.bgColor,
                                     fontWeight: FontWeight.bold,
                                   ),
@@ -303,12 +357,12 @@ class _HeaderAvatar extends StatelessWidget {
           backgroundImage: imageUrl != null ? NetworkImage(imageUrl!) : null,
           child: imageUrl == null
               ? Text(
-                  name.isNotEmpty ? name[0].toUpperCase() : '?',
-                  style: const TextStyle(
-                    color: AppColors.primaryColor,
-                    fontWeight: FontWeight.bold,
-                  ),
-                )
+            name.isNotEmpty ? name[0].toUpperCase() : '?',
+            style: const TextStyle(
+              color: AppColors.primaryColor,
+              fontWeight: FontWeight.bold,
+            ),
+          )
               : null,
         ),
         if (isOnline)

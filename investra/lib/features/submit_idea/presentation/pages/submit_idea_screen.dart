@@ -4,6 +4,10 @@ import 'package:investra/core/styles/colors.dart';
 import 'package:investra/core/widgets/custom_svg_picture.dart';
 import 'package:investra/features/messages/presentation/widgets/chat_attachment_bottom_sheet.dart';
 import 'package:investra/features/submit_idea/presentation/widgets/submit_button.dart';
+import 'dart:io';
+import 'package:file_picker/file_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 
 /// Multi-step idea submission form aligned with app design tokens.
 class SubmitIdeaScreen extends StatefulWidget {
@@ -16,6 +20,10 @@ class SubmitIdeaScreen extends StatefulWidget {
 class _SubmitIdeaScreenState extends State<SubmitIdeaScreen> {
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _pitchController = TextEditingController();
+
+  File? _businessPlanFile;
+  File? _feasibilityFile;
+  bool _isUploading = false;
 
   String? _category;
   bool _businessPlan = false;
@@ -75,6 +83,87 @@ class _SubmitIdeaScreenState extends State<SubmitIdeaScreen> {
       _formComplete = complete;
     });
   }
+
+
+
+
+
+
+
+  // 1. وظيفة لاختيار الملف من الموبايل وتخزينه
+  Future<void> _pickDocument(bool isBusinessPlan) async {
+    FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['pdf', 'doc', 'docx'],
+    );
+
+    if (result != null) {
+      setState(() {
+        if (isBusinessPlan) {
+          _businessPlanFile = File(result.files.single.path!);
+          _businessPlan = true;
+        } else {
+          _feasibilityFile = File(result.files.single.path!);
+          _feasibilityStudy = true;
+        }
+      });
+      updateStepProgress();
+    }
+  }
+
+  // 2. الوظيفة النهائية لرفع الملفات للـ Storage وحفظ البيانات في الجدول
+  Future<void> _submitAllData() async {
+    setState(() => _isUploading = true);
+    final supabase = Supabase.instance.client;
+
+    try {
+      List<String> uploadedUrls = [];
+
+      // رفع الـ Business Plan لو تم اختياره
+      if (_businessPlanFile != null) {
+        String fileName = 'bp_${DateTime.now().millisecondsSinceEpoch}.pdf';
+        await supabase.storage.from('ideas_docs').upload('public/$fileName', _businessPlanFile!);
+        uploadedUrls.add(supabase.storage.from('ideas_docs').getPublicUrl('public/$fileName'));
+      }
+
+      // رفع الـ Feasibility Study لو تم اختياره
+      if (_feasibilityFile != null) {
+        String fileName = 'fs_${DateTime.now().millisecondsSinceEpoch}.pdf';
+        await supabase.storage.from('ideas_docs').upload('public/$fileName', _feasibilityFile!);
+        uploadedUrls.add(supabase.storage.from('ideas_docs').getPublicUrl('public/$fileName'));
+      }
+
+      // إدخال كل البيانات في جدول ideas
+      await supabase.from('ideas').insert({
+        'title': _titleController.text,
+        'description': _pitchController.text,
+        'category': _category,
+        'entrepreneur_id': supabase.auth.currentUser!.id, // بيجيب آيدي المستخدم الحالي
+        'idea_docs': uploadedUrls, // مصفوفة اللينكات
+        'status': 'pending',
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Your idea has been submitted successfully!')),
+        );
+        Navigator.pop(context); // Back to home after success
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('An error occurred: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isUploading = false);
+    }
+  }
+
+
+
+
+
 
   String _stepSubtitle() {
     if (!_step1Complete) return 'Project Fundamentals';
@@ -222,51 +311,38 @@ class _SubmitIdeaScreenState extends State<SubmitIdeaScreen> {
               style: textTheme.bodySmall?.copyWith(color: AppColors.grayColor),
             ),
             const SizedBox(height: 12),
+
+
             _ChecklistTile(
               label: 'Business Plan',
-              value: _businessPlan,
-              onChanged: (v) {
+              isChecked: _businessPlan,
+              isFileUploaded: _businessPlanFile != null,
+              onCheckboxChanged: (v) {
                 setState(() => _businessPlan = v ?? false);
                 updateStepProgress();
               },
-              onAdd: () async {
-                await ChatAttachmentBottomSheet.pickDocument(
-                  context,
-                  onFilePicked: (_) {
-                    setState(() => _businessPlan = true);
-                    updateStepProgress();
-                  },
-                );
-              },
+              onAdd: () => _pickDocument(true),
             ),
             const SizedBox(height: 8),
             _ChecklistTile(
               label: 'Feasibility Study',
-              value: _feasibilityStudy,
-              onChanged: (v) {
+              isChecked: _feasibilityStudy,
+              isFileUploaded: _feasibilityFile != null,
+              onCheckboxChanged: (v) {
                 setState(() => _feasibilityStudy = v ?? false);
                 updateStepProgress();
               },
-              onAdd: () async {
-                await ChatAttachmentBottomSheet.pickDocument(
-                  context,
-                  onFilePicked: (_) {
-                    setState(() => _feasibilityStudy = true);
-                    updateStepProgress();
-                  },
-                );
-              },
+              onAdd: () => _pickDocument(false),
             ),
             const SizedBox(height: 28),
+
             SubmitIdeaSubmitButton(
-              enabled: _formComplete,
-              onPressed: () {
-                // Placeholder: wire to domain / use-case when backend exists.
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Idea submitted')),
-                );
-              },
+
+              enabled: _formComplete && !_isUploading,
+              onPressed: _submitAllData,
             ),
+
+
             const SizedBox(height: 12),
             Center(
               child: Text(
@@ -364,14 +440,16 @@ class _AnimatedProgressTrack extends StatelessWidget {
 class _ChecklistTile extends StatelessWidget {
   const _ChecklistTile({
     required this.label,
-    required this.value,
-    required this.onChanged,
+    required this.isChecked,
+    required this.isFileUploaded,
+    required this.onCheckboxChanged,
     required this.onAdd,
   });
 
   final String label;
-  final bool value;
-  final ValueChanged<bool?> onChanged;
+  final bool isChecked;
+  final bool isFileUploaded;
+  final ValueChanged<bool?> onCheckboxChanged;
   final Future<void> Function() onAdd;
 
   @override
@@ -382,7 +460,7 @@ class _ChecklistTile extends StatelessWidget {
       color: AppColors.secondary1Color,
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
-        onTap: () => onChanged(!value),
+        onTap: () => onCheckboxChanged(!isChecked),
         borderRadius: BorderRadius.circular(8),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -393,8 +471,10 @@ class _ChecklistTile extends StatelessWidget {
           child: Row(
             children: [
               Checkbox(
-                value: value,
-                onChanged: onChanged,
+                value: isChecked,
+                onChanged: onCheckboxChanged,
+                side: const BorderSide(color: AppColors.bgGray, width: 1.5),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
               ),
               Expanded(
                 child: Text(
@@ -407,19 +487,23 @@ class _ChecklistTile extends StatelessWidget {
               ),
               IconButton(
                 onPressed: () => onAdd(),
-                tooltip: 'Add document',
-                icon: const Icon(Icons.add),
+                tooltip: isFileUploaded ? 'Document added' : 'Add document',
+                icon: Icon(isFileUploaded ? Icons.check_circle : Icons.add),
                 iconSize: 22,
                 style: IconButton.styleFrom(
-                  foregroundColor: AppColors.primaryColor,
-                  backgroundColor: AppColors.secondary2Color,
+                  foregroundColor: isFileUploaded ? AppColors.green1Color : AppColors.primaryColor,
+                  backgroundColor: isFileUploaded ? AppColors.lightgreen : AppColors.secondary2Color,
                   padding: const EdgeInsets.all(6),
                   minimumSize: const Size.square(36),
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   visualDensity: VisualDensity.compact,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
-                    side: const BorderSide(color: AppColors.bgGray),
+                    side: BorderSide(
+                      color: isFileUploaded
+                          ? AppColors.green1Color.withValues(alpha: 0.2)
+                          : AppColors.bgGray,
+                    ),
                   ),
                 ),
               ),
