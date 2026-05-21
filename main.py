@@ -12,6 +12,7 @@ import io
 import json
 import uuid
 from datetime import datetime, timezone
+from pydantic import BaseModel
 
 app = FastAPI()
 load_dotenv()
@@ -202,17 +203,24 @@ async def evaluate_pitch(
     }
 
 # ============================================================
+# الـ Schema الخاصة باستقبال بيانات المحادثة كـ JSON
+# ============================================================
+class ChatInput(BaseModel):
+    message: str
+    history: str = "[]"
+    session_id: str = None
+    user_id: str = None
+
+# ============================================================
 # /chat — محادثة عادية مع حفظ في Supabase
 # ============================================================
 @app.post("/chat")
-async def chat(
-    message: str = Form(...),
-    history: str = Form(default="[]"),
-    session_id: str = Form(default=None),
-    user_id: str = Form(default=None)
-):
-    session_id = clean_uuid(session_id)
-    user_id = clean_uuid(user_id)
+async def chat(data: ChatInput):
+    # فك المتغيرات لضمان عمل نفس منطق الكود الخاص بك دون أي تغيير
+    message = data.message
+    history = data.history
+    session_id = clean_uuid(data.session_id)
+    user_id = clean_uuid(data.user_id)
 
     try:
         chat_history = json.loads(history) if history and history.strip() not in ["", "[]"] else []
