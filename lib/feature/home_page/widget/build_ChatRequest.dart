@@ -7,11 +7,15 @@ class BuildChatRequest extends StatelessWidget {
     required this.name,
     required this.company,
     required this.icon,
+    this.onAcceptTap,   // إضافة باراميتر قبول الطلب
+    this.onDeclineTap,  // إضافة باراميتر رفض الطلب
   });
 
   final String name;
   final String company;
   final IconData icon;
+  final VoidCallback? onAcceptTap;
+  final VoidCallback? onDeclineTap;
 
   @override
   Widget build(BuildContext context) {
@@ -52,24 +56,32 @@ class BuildChatRequest extends StatelessWidget {
               ],
             ),
           ),
-          Container(
-            width: 30,
-            height: 30,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(8),
+          InkWell(
+            onTap: onDeclineTap,
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.close, size: 18, color: Colors.grey),
             ),
-            child: const Icon(Icons.close, size: 18, color: Colors.grey),
           ),
           const SizedBox(width: 8),
-          Container(
-            width: 30,
-            height: 30,
-            decoration: BoxDecoration(
-              color: AppColors.green1Color,
-              borderRadius: BorderRadius.circular(8),
+          InkWell(
+            onTap: onAcceptTap,
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                color: AppColors.green1Color,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.check, size: 18, color: AppColors.secondary2Color),
             ),
-            child: const Icon(Icons.check, size: 18, color: AppColors.secondary2Color),
           ),
         ],
       ),

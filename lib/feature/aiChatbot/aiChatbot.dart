@@ -19,6 +19,7 @@ class AiChatbotScreen extends StatefulWidget {
 
 class _AiChatbotScreenState extends State<AiChatbotScreen> {
   final TextEditingController _messageController = TextEditingController();
+  final FocusNode _messageFocusNode = FocusNode();
   final _supabase = Supabase.instance.client;
 
   String? _currentSessionId;
@@ -36,19 +37,30 @@ class _AiChatbotScreenState extends State<AiChatbotScreen> {
     _initializeChat();
   }
 
+  @override
+  void dispose() {
+    _messageController.dispose();
+    _messageFocusNode.dispose();
+    super.dispose();
+  }
+
   Future<void> _initializeChat() async {
     try {
       final user = _supabase.auth.currentUser;
       if (user == null) return;
 
       final userData = await _supabase.from('User').select('FullName').eq('userid', user.id).maybeSingle();
-      if (userData != null) setState(() => _userName = userData['FullName']);
+      if (userData != null && mounted) {
+        setState(() => _userName = userData['FullName']);
+      }
 
       if (widget.existingSessionId != null) {
-        setState(() {
-          _currentSessionId = widget.existingSessionId;
-          _isLoading = false;
-        });
+        if (mounted) {
+          setState(() {
+            _currentSessionId = widget.existingSessionId;
+            _isLoading = false;
+          });
+        }
       } else {
         await _createNewChatSession(user.id);
       }
@@ -62,7 +74,7 @@ class _AiChatbotScreenState extends State<AiChatbotScreen> {
     if (!mounted) return;
     setState(() => _isLoading = true);
     try {
-      final nowStr = DateTime.now().toIso8601String(); // phone time
+      final nowStr = DateTime.now().toIso8601String();
 
       final newSession = await _supabase.from('AI_Sessions').insert({
         'user_id': userId,
@@ -76,7 +88,7 @@ class _AiChatbotScreenState extends State<AiChatbotScreen> {
         'session_id': sessionId,
         'sender_role': 'assistant',
         'content': 'Hi $_userName, I am your Investra AI\nhow can I help you today',
-        'created_at': nowStr, // send current time
+        'created_at': nowStr,
       });
 
       if (mounted) {
@@ -93,7 +105,7 @@ class _AiChatbotScreenState extends State<AiChatbotScreen> {
   Future<void> _pickFile() async {
     setState(() => _isMenuOpen = false);
     FilePickerResult? result = await FilePicker.platform.pickFiles();
-    if (result != null) {
+    if (result != null && mounted) {
       setState(() {
         _selectedFile = File(result.files.single.path!);
         _selectedFileName = result.files.single.name;
@@ -116,6 +128,8 @@ class _AiChatbotScreenState extends State<AiChatbotScreen> {
       _isSending = true;
     });
 
+    _messageFocusNode.requestFocus();
+
     try {
       String? uploadedFileUrl;
       if (fileToSend != null) {
@@ -130,7 +144,7 @@ class _AiChatbotScreenState extends State<AiChatbotScreen> {
         'content': text,
         'file_url': uploadedFileUrl,
         'file_name': fileNameToSend,
-        'created_at': DateTime.now().toIso8601String(), // send real time
+        'created_at': DateTime.now().toIso8601String(),
       });
 
     } catch (e) {
@@ -155,11 +169,17 @@ class _AiChatbotScreenState extends State<AiChatbotScreen> {
           actions: [
             IconButton(
               icon: const Icon(Icons.history, color: AppColors.primaryColor),
-              onPressed: () {
-                Navigator.push(
+              onPressed: () async {
+                final selectedSessionId = await Navigator.push<String>(
                   context,
                   MaterialPageRoute(builder: (context) => const AiChatHistoryScreen()),
                 );
+
+                if (selectedSessionId != null && mounted) {
+                  setState(() {
+                    _currentSessionId = selectedSessionId;
+                  });
+                }
               },
             )
           ],
@@ -191,8 +211,12 @@ class _AiChatbotScreenState extends State<AiChatbotScreen> {
           .eq('session_id', _currentSessionId!)
           .order('created_at', ascending: true),
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return const Center(child: Text("Error loading messages", style: TextStyle(color: AppColors.errorColor)));
+        }
         if (!snapshot.hasData) return const SizedBox();
         final messages = snapshot.data!;
+
         return ListView.builder(
           padding: const EdgeInsets.all(16),
           itemCount: messages.length,
@@ -204,9 +228,12 @@ class _AiChatbotScreenState extends State<AiChatbotScreen> {
 
   Widget _buildChatBubble(Map<String, dynamic> msg) {
     bool isAi = msg['sender_role'] == 'assistant';
-    String time = msg['created_at'] != null
-        ? DateFormat('h:mm a').format(DateTime.parse(msg['created_at']))
-        : "";
+    String time = "";
+    try {
+      if (msg['created_at'] != null) {
+        time = DateFormat('h:mm a').format(DateTime.parse(msg['created_at']).toLocal());
+      }
+    } catch (_) {}
 
     return Padding(
       key: ValueKey(msg['message_id']),
@@ -225,7 +252,7 @@ class _AiChatbotScreenState extends State<AiChatbotScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (msg['content'] != null)
+                if (msg['content'] != null && msg['content'].toString().isNotEmpty)
                   Text(
                     msg['content'],
                     style: TextStyle(color: isAi ? AppColors.blackColor : Colors.white),
@@ -258,7 +285,7 @@ class _AiChatbotScreenState extends State<AiChatbotScreen> {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.only(top: 4),
+            padding: const EdgeInsets.only(top: 4, right: 4, left: 4),
             child: Text(time, style: const TextStyle(fontSize: 10, color: AppColors.grayColor)),
           ),
         ],
@@ -282,6 +309,7 @@ class _AiChatbotScreenState extends State<AiChatbotScreen> {
               Expanded(
                 child: TextField(
                   controller: _messageController,
+                  focusNode: _messageFocusNode,
                   decoration: InputDecoration(
                     hintText: "Type a message...",
                     filled: true,
@@ -320,13 +348,14 @@ class _AiChatbotScreenState extends State<AiChatbotScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: Container(
-                padding: const EdgeInsets.all(4),
-                child: SvgPicture.asset('assets/icons/ai_chatbot.svg', width: 20, height: 20, color: AppColors.primaryColor),
-              ),
+              leading: SvgPicture.asset('assets/icons/ai_chatbot.svg', width: 20, height: 20, color: AppColors.primaryColor),
               title: const Text("New Chat", style: TextStyle(color: AppColors.primaryColor, fontWeight: FontWeight.bold)),
               onTap: () {
-                setState(() => _isMenuOpen = false);
+                setState(() {
+                  _isMenuOpen = false;
+                  _selectedFile = null;
+                  _selectedFileName = null;
+                });
                 final user = _supabase.auth.currentUser;
                 if (user != null) _createNewChatSession(user.id);
               },
@@ -352,7 +381,7 @@ class _AiChatbotScreenState extends State<AiChatbotScreen> {
         children: [
           const Icon(Icons.file_copy, color: AppColors.primaryColor),
           const SizedBox(width: 10),
-          Expanded(child: Text(_selectedFileName!, style: const TextStyle(fontWeight: FontWeight.bold))),
+          Expanded(child: Text(_selectedFileName ?? "File", style: const TextStyle(fontWeight: FontWeight.bold))),
           IconButton(
             icon: const Icon(Icons.cancel, color: AppColors.errorColor),
             onPressed: () => setState(() { _selectedFile = null; _selectedFileName = null; }),

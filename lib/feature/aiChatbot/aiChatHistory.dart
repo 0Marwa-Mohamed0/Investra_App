@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:investra/core/styles/colors.dart';
-import 'package:investra/feature/aiChatbot/aiChatbot.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:investra/feature/aiChatbot/ai_chat_models.dart';
 
 class AiChatHistoryScreen extends StatefulWidget {
   const AiChatHistoryScreen({super.key});
@@ -14,8 +14,9 @@ class AiChatHistoryScreen extends StatefulWidget {
 
 class _AiChatHistoryScreenState extends State<AiChatHistoryScreen> {
   final _supabase = Supabase.instance.client;
-  List<Map<String, dynamic>> _allSessions = [];
-  List<Map<String, dynamic>> _filteredSessions = [];
+
+  List<AiSession> _allSessions = [];
+  List<AiSession> _filteredSessions = [];
   bool _isLoading = true;
   final TextEditingController _searchController = TextEditingController();
 
@@ -24,6 +25,12 @@ class _AiChatHistoryScreenState extends State<AiChatHistoryScreen> {
     super.initState();
     _fetchHistory();
     _searchController.addListener(_filterChats);
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _fetchHistory() async {
@@ -37,14 +44,18 @@ class _AiChatHistoryScreenState extends State<AiChatHistoryScreen> {
           .eq('user_id', user.id)
           .order('created_at', ascending: false);
 
-      setState(() {
-        _allSessions = List<Map<String, dynamic>>.from(data);
-        _filteredSessions = _allSessions;
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _allSessions = (data as List).map((json) => AiSession.fromJson(json)).toList();
+          _filteredSessions = _allSessions;
+          _isLoading = false;
+        });
+      }
     } catch (e) {
       debugPrint("History Error: $e");
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -52,21 +63,17 @@ class _AiChatHistoryScreenState extends State<AiChatHistoryScreen> {
     final query = _searchController.text.toLowerCase();
     setState(() {
       _filteredSessions = _allSessions.where((session) {
-        final title = (session['title'] ?? '').toLowerCase();
-        return title.contains(query);
+        return session.title.toLowerCase().contains(query);
       }).toList();
     });
   }
-//local time
-  String _formatDate(String? dateString) {
-    if (dateString == null) return '';
-    DateTime date = DateTime.parse(dateString);
-    DateTime now = DateTime.now();
 
+  String _formatDate(DateTime date) {
+    DateTime now = DateTime.now();
     if (date.year == now.year && date.month == now.month && date.day == now.day) {
-      return DateFormat('h:mm a').format(date);
+      return DateFormat('h:mm a').format(date.toLocal());
     } else {
-      return DateFormat('MMM d, yyyy').format(date);
+      return DateFormat('MMM d, yyyy').format(date.toLocal());
     }
   }
 
@@ -108,7 +115,7 @@ class _AiChatHistoryScreenState extends State<AiChatHistoryScreen> {
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator(color: AppColors.primaryColor))
                 : _filteredSessions.isEmpty
-                ? const Center(child: Text("No history found"))
+                ? const Center(child: Text("No history found", style: TextStyle(color: AppColors.grayColor)))
                 : ListView.builder(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               itemCount: _filteredSessions.length,
@@ -123,7 +130,9 @@ class _AiChatHistoryScreenState extends State<AiChatHistoryScreen> {
     );
   }
 
-  Widget _buildChatCard(Map<String, dynamic> session) {
+  Widget _buildChatCard(AiSession session) {
+    String formattedSubDate = DateFormat('MMM d, yyyy').format(session.createdAt.toLocal()).toUpperCase();
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -155,12 +164,14 @@ class _AiChatHistoryScreenState extends State<AiChatHistoryScreen> {
           children: [
             Expanded(
                 child: Text(
-                    session['title'] ?? 'Chat',
-                    style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.blackColor)
+                  session.title,
+                  style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.blackColor),
+                  overflow: TextOverflow.ellipsis,
                 )
             ),
+            const SizedBox(width: 8),
             Text(
-                _formatDate(session['created_at']),
+                _formatDate(session.createdAt),
                 style: const TextStyle(color: AppColors.grayColor, fontSize: 12)
             ),
           ],
@@ -168,17 +179,12 @@ class _AiChatHistoryScreenState extends State<AiChatHistoryScreen> {
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 8.0),
           child: Text(
-            DateFormat('MMM d, yyyy').format(DateTime.parse(session['created_at'])).toUpperCase(),
+            formattedSubDate,
             style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppColors.grayColor),
           ),
         ),
         onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => AiChatbotScreen(existingSessionId: session['session_id']),
-            ),
-          );
+          Navigator.pop(context, session.sessionId);
         },
       ),
     );

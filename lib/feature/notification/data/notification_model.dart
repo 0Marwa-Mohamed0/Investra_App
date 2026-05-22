@@ -6,9 +6,9 @@ class NotificationModel {
   final String type;
   final bool isRead;
   final DateTime createdAt;
-  // الأعمدة الجديدة اللي أضفتيها في Supabase
   final String? ideaId;
   final String? requestId;
+  final String status;
 
   NotificationModel({
     required this.id,
@@ -20,20 +20,23 @@ class NotificationModel {
     required this.createdAt,
     this.ideaId,
     this.requestId,
+    required this.status,
   });
 
   factory NotificationModel.fromJson(Map<String, dynamic> json) {
     return NotificationModel(
       id: json['id'],
-      userId: json['user_id'],
-      title: json['title'],
-      content: json['content'],
-      type: json['type'],
+      userId: json['user_id'] ?? '',
+      title: json['title'] ?? '',
+      content: json['content'] ?? '',
+      type: json['type'] ?? 'chat',
       isRead: json['is_read'] ?? false,
-      createdAt: DateTime.parse(json['created_at']),
-      // السطرين دول هم اللي ناقصين عندك في الصورة!
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'])
+          : DateTime.now(),
       ideaId: json['idea_id'],
       requestId: json['request_id'],
+      status: json['status'] ?? 'pending',
     );
   }
 }

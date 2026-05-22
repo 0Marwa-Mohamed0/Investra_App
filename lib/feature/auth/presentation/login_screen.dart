@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:gap/gap.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../data/auth_service.dart';
+import 'package:investra/core/styles/colors.dart';
+import 'register_screen.dart';
+import 'forgot_password_screen.dart';
+import 'role_selection.dart';
+import 'widgets/auth_text_field.dart';
+import 'widgets/social_auth_button.dart';
 import 'package:investra/feature/main_app/mainAppEnterpreneur.dart';
 import 'package:investra/feature/main_app/mainAppInvestor.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -16,14 +21,48 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _authService = AuthService();
   bool _isLoading = false;
   bool _obscurePassword = true;
+  dynamic _authSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    // مراقبة الدخول الذكي للـ OAuth (جوجل ولينكد إن)
+    _authSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((data) async {
+      final session = data.session;
+      if (session != null && data.event == AuthChangeEvent.signedIn) {
+        final userRecord = await _authService.checkUserRecord(session.user.id);
+
+        if (mounted) {
+          // الفحص الذكي: للتأكد من أن السجل موجود ومختار رول حقيقي وليس فارغاً بسبب التريجر
+          if (userRecord != null && userRecord['role'] != null && userRecord['role'].toString().isNotEmpty && userRecord['role'] != 'Unknown') {
+            final userRole = await _authService.updateUserSessionAndGetRole(session.user.id);
+            _navigateBasedOnRole(userRole);
+          } else {
+            // مستخدم جديد مسجل بجوجل -> نحوله لشاشة اختيار الـ Role لتكملة بياناته أول مرة
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => const RoleSelectionScreen()),
+            );
+          }
+        }
+      }
+    });
+  }
 
   @override
   void dispose() {
+    _authSubscription?.cancel();
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  bool _isEmailValid(String email) {
+    return RegExp(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
+        .hasMatch(email);
   }
 
   Future<void> _login() async {
@@ -31,258 +70,155 @@ class _LoginScreenState extends State<LoginScreen> {
     final password = _passwordController.text.trim();
 
     if (email.isEmpty || password.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please fill in all fields')),
-      );
+      _showSnackBar('Please fill in all fields', AppColors.errorColor);
+      return;
+    }
+
+    if (!_isEmailValid(email)) {
+      _showSnackBar('Please enter a valid email address', AppColors.errorColor);
       return;
     }
 
     setState(() => _isLoading = true);
 
     try {
-      final response = await Supabase.instance.client.auth.signInWithPassword(
-        email: email,
-        password: password,
-      );
-
-      final user = response.user;
-      if (user != null) {
-        await Supabase.instance.client
-            .from('User')
-            .update({'last_login': DateTime.now().toIso8601String()})
-            .eq('userid', user.id);
-
-        await Future.delayed(const Duration(seconds: 1));
-
-        var data = await Supabase.instance.client
-            .from('User')
-            .select('role')
-            .eq('userid', user.id)
-            .maybeSingle();
-
-        if (data == null) {
-          await Future.delayed(const Duration(seconds: 1));
-          data = await Supabase.instance.client
-              .from('User')
-              .select('role')
-              .eq('userid', user.id)
-              .maybeSingle();
-        }
-
-        if (data == null) {
-          throw 'User record not found in database.';
-        }
-
-        final String userRole = data['role'] ?? 'Unknown';
-
+      final response = await _authService.login(email, password);
+      if (response.user != null) {
+        final userRole = await _authService.updateUserSessionAndGetRole(response.user!.id);
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Login Completed Successfully!'),
-              backgroundColor: Colors.green,
-            ),
-          );
+          _showSnackBar('Login Completed Successfully!', AppColors.green1Color);
           _navigateBasedOnRole(userRole);
         }
       }
     } on AuthException catch (error) {
-      String errorMessage = error.message;
-      if (error.message == 'Invalid login credentials') {
-        errorMessage = 'Wrong email or password.';
-      }
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(errorMessage), backgroundColor: Colors.red),
-        );
-      }
+      String msg = error.message == 'Invalid login credentials' ? 'Wrong email or password.' : error.message;
+      _showSnackBar(msg, AppColors.errorColor);
     } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $error'), backgroundColor: Colors.red),
-        );
-      }
+      _showSnackBar('Error: $error', AppColors.errorColor);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  Future<void> _signInWithOAuth(OAuthProvider provider) async {
-    setState(() => _isLoading = true);
-    try {
-      await Supabase.instance.client.auth.signInWithOAuth(
-        provider,
-        redirectTo: 'io.supabase.flutter://login-callback',
+  void _showSnackBar(String message, Color color) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message), backgroundColor: color),
       );
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $error'), backgroundColor: Colors.red),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   void _navigateBasedOnRole(String role) {
-    if (role == 'Investor') {
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (context) => const MainAppInvestorScreen()),
-            (route) => false,
-      );
-    } else if (role == 'Entrepreneur') {
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (context) => const MainAppEnterpreneurScreen()),
-            (route) => false,
-      );
-    }
+    final Widget nextScreen = (role == 'Investor') ? const MainAppInvestorScreen() : const MainAppEnterpreneurScreen();
+    Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (context) => nextScreen), (route) => false);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.bgColor,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF1E4D7B)),
-          onPressed: () {
-            if (Navigator.canPop(context)) {
-              Navigator.pop(context);
-            }
-          },
-        ),
+        leading: const BackButton(color: AppColors.blackColor),
         title: const Text(
           "Investra",
-          style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900, color: Color(0xFF1E4D7B), letterSpacing: 1.5),
+          style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppColors.primaryColor),
         ),
         centerTitle: true,
       ),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          return SingleChildScrollView(
-            physics: const BouncingScrollPhysics(),
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minHeight: constraints.maxHeight),
-              child: IntrinsicHeight(
-                child: Column(
-                  children: [
-                    const Gap(50),
-                    const Text("Welcome Back", style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFF0D3B66))),
-                    const Gap(10),
-                    const Text("Manage your portfolio and track\ninvestments", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 15, height: 1.5)),
-                    const Gap(50),
-                    _buildLabel("Email Address"),
-                    const Gap(8),
-                    _buildTextField(_emailController, "name@example.com", Icons.email_outlined),
-                    const Gap(25),
-                    _buildLabel("Password"),
-                    const Gap(8),
-                    _buildTextField(_passwordController, "********", Icons.lock_outline, isPass: _obscurePassword, onToggleVisibility: () => setState(() => _obscurePassword = !_obscurePassword)),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton(onPressed: () {}, child: const Text("Forgot Password?", style: TextStyle(color: Color(0xFF1E4D7B), fontSize: 13, fontWeight: FontWeight.bold))),
-                    ),
-                    const Gap(30),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF1E4D7B),
-                        minimumSize: const Size(double.infinity, 60),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                      ),
-                      onPressed: _isLoading ? null : _login,
-                      child: _isLoading
-                          ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                          : const Text("Log In", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                    ),
-                    const Gap(40),
-                    const Row(
-                      children: [
-                        Expanded(child: Divider()),
-                        Padding(padding: EdgeInsets.symmetric(horizontal: 15), child: Text("OR CONTINUE WITH", style: TextStyle(color: Colors.grey, fontSize: 11, fontWeight: FontWeight.bold))),
-                        Expanded(child: Divider()),
-                      ],
-                    ),
-                    const Gap(30),
-                    Row(
-                      children: [
-                        Expanded(child: _socialBtn("Google", 'assets/icons/google_svg.svg', OAuthProvider.google)),
-                        const Gap(15),
-                        Expanded(child: _socialBtn("LinkedIn", 'assets/icons/Linkedin.svg', OAuthProvider.linkedin)),
-                      ],
-                    ),
-                    const Spacer(),
-                    const Gap(30),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Text("Don't have an account? ", style: TextStyle(color: Colors.grey, fontSize: 14)),
-                        GestureDetector(
-                          onTap: () {
-                            if (Navigator.canPop(context)) {
-                              Navigator.pop(context);
-                            } else {
-                              Navigator.pushReplacement(
-                                context,
-                                MaterialPageRoute(builder: (context) => const RegistrationScreen()),
-                              );
-                            }
-                          },
-                          child: const Text("Sign up for free", style: TextStyle(color: Color(0xFF1E4D7B), fontWeight: FontWeight.bold, fontSize: 14)),
-                        ),
-                      ],
-                    ),
-                    const Gap(30),
-                  ],
+      body: SafeArea(
+        child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Gap(40),
+              const Text(
+                "Welcome Back",
+                style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: AppColors.blackColor),
+                textAlign: TextAlign.center,
+              ),
+              const Gap(12),
+              const Text(
+                "Manage your portfolio and track\ninvestments",
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppColors.grayColor, fontSize: 16, height: 1.5),
+              ),
+              const Gap(40),
+              AuthTextField(controller: _emailController, label: "Email Address", hint: "name@example.com", icon: Icons.email_outlined),
+              AuthTextField(
+                controller: _passwordController,
+                label: "Password",
+                hint: "********",
+                icon: Icons.lock_outline,
+                isPassword: true,
+                obscureText: _obscurePassword,
+                onToggleVisibility: () => setState(() => _obscurePassword = !_obscurePassword),
+              ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const ForgotPasswordScreen()),
+                    );
+                  },
+                  style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: Size.zero),
+                  child: const Text("Forgot Password?", style: TextStyle(color: AppColors.primaryColor, fontSize: 14, fontWeight: FontWeight.bold)),
                 ),
               ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _socialBtn(String label, String iconPath, OAuthProvider provider) {
-    return OutlinedButton(
-      style: OutlinedButton.styleFrom(
-        minimumSize: const Size(double.infinity, 60),
-        side: const BorderSide(color: Color(0xFFF1F4F8)),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-        backgroundColor: const Color(0xFFF8F9FB),
-      ),
-      onPressed: () => _signInWithOAuth(provider),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          iconPath.endsWith('.svg') ? SvgPicture.asset(iconPath, width: 20) : Image.asset(iconPath, width: 20),
-          const Gap(10),
-          Text(label, style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 14)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLabel(String text) {
-    return Align(alignment: Alignment.centerLeft, child: Text(text, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF1E4D7B))));
-  }
-
-  Widget _buildTextField(TextEditingController controller, String hint, IconData icon, {bool isPass = false, VoidCallback? onToggleVisibility}) {
-    return TextField(
-      controller: controller,
-      obscureText: isPass,
-      decoration: InputDecoration(
-        hintText: hint,
-        filled: true,
-        fillColor: const Color(0xFFF8F9FB),
-        prefixIcon: Icon(icon, color: Colors.grey, size: 20),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
-        suffixIcon: onToggleVisibility != null ? IconButton(icon: Icon(isPass ? Icons.visibility_off_outlined : Icons.visibility_outlined, color: Colors.grey), onPressed: onToggleVisibility) : null,
+              const Gap(24),
+              SizedBox(
+                height: 56,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primaryColor,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                    elevation: 0,
+                  ),
+                  onPressed: _isLoading ? null : _login,
+                  child: _isLoading
+                      ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: AppColors.bgColor, strokeWidth: 2))
+                      : const Text("Log In", style: TextStyle(color: AppColors.bgColor, fontWeight: FontWeight.bold, fontSize: 16)),
+                ),
+              ),
+              const Gap(40),
+              const Row(
+                children: [
+                  Expanded(child: Divider(color: AppColors.bgGray)),
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 15),
+                    child: Text("OR CONTINUE WITH", style: TextStyle(color: AppColors.grayColor, fontSize: 11, fontWeight: FontWeight.bold)),
+                  ),
+                  Expanded(child: Divider(color: AppColors.bgGray)),
+                ],
+              ),
+              const Gap(24),
+              Row(
+                children: [
+                  Expanded(child: SocialAuthButton(label: "Google", iconPath: 'assets/icons/google_svg.svg', onPressed: () => _authService.signInWithOAuth(OAuthProvider.google))),
+                  const Gap(16),
+                  Expanded(child: SocialAuthButton(label: "LinkedIn", iconPath: 'assets/icons/Linkedin.svg', onPressed: () => _authService.signInWithOAuth(OAuthProvider.linkedin))),
+                ],
+              ),
+              const Gap(40),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text("Don't have an account? ", style: TextStyle(color: AppColors.grayColor, fontSize: 14)),
+                  GestureDetector(
+                    onTap: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const RegistrationScreen())),
+                    child: const Text("Sign up for free", style: TextStyle(color: AppColors.primaryColor, fontWeight: FontWeight.bold, fontSize: 14)),
+                  ),
+                ],
+              ),
+              const Gap(30),
+            ],
+          ),
+        ),
       ),
     );
   }

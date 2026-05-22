@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:investra/core/styles/colors.dart';
 import 'package:investra/feature/notification/data/notification_model.dart';
-import 'package:investra/features/messages/data/chat_supabase_service.dart';
+import 'package:investra/feature/profile/screens/profile_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 
@@ -14,10 +14,14 @@ class NotificationsScreen extends StatelessWidget {
     final userId = supabase.auth.currentUser!.id;
 
     return Scaffold(
-      backgroundColor: AppColors.bgColor,
+      backgroundColor: AppColors.bg,
       appBar: AppBar(
-        backgroundColor: AppColors.bgColor,
+        backgroundColor: AppColors.bg,
         elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new, color: AppColors.primaryColor, size: 18),
+          onPressed: () => Navigator.pop(context),
+        ),
         title: const Text(
           "Notifications",
           style: TextStyle(
@@ -28,31 +32,35 @@ class NotificationsScreen extends StatelessWidget {
         centerTitle: true,
       ),
       body: StreamBuilder<List<Map<String, dynamic>>>(
-        // استماع فوري للتغييرات في جدول الإشعارات الخاص بالمستخدم الحالي
         stream: supabase
             .from('notifications')
             .stream(primaryKey: ['id'])
-            .eq('user_id', userId),
+            .eq('user_id', userId)
+            .order('created_at', ascending: false),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(
+              child: CircularProgressIndicator(color: AppColors.primaryColor),
+            );
           }
           if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return const Center(child: Text("No notifications yet"));
+            return const Center(
+              child: Text(
+                "No notifications yet",
+                style: TextStyle(color: AppColors.grayColor),
+              ),
+            );
           }
 
           final notifications = snapshot.data!
               .map((json) => NotificationModel.fromJson(json))
               .toList();
 
-          // ترتيب الإشعارات من الأحدث للأقدم
-          notifications.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-
           return ListView.builder(
             padding: const EdgeInsets.all(16),
             itemCount: notifications.length,
             itemBuilder: (context, index) =>
-                _buildNotificationItem(context, notifications[index], supabase),
+                _buildNotificationItem(context, notifications[index], supabase, userId),
           );
         },
       ),
@@ -60,146 +68,162 @@ class NotificationsScreen extends StatelessWidget {
   }
 
   Widget _buildNotificationItem(
-      BuildContext context, NotificationModel item, SupabaseClient supabase) {
-    final chatService = ChatSupabaseService();
-
+      BuildContext context, NotificationModel item, SupabaseClient supabase, String myId) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: item.isRead ? Colors.white : const Color(0xFFF0F7FF),
+        color: item.isRead ? AppColors.bgColor : AppColors.secondary1Color,
         borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: item.isRead ? AppColors.bgGray : AppColors.primaryColor.withOpacity(0.4),
+          width: item.isRead ? 1.0 : 1.6,
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 10,
+            color: AppColors.blackColor.withOpacity(0.02),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
           )
         ],
       ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              const CircleAvatar(
-                backgroundColor: AppColors.primaryColor,
-                child: Icon(Icons.notifications, color: Colors.white),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(item.title,
-                        style: const TextStyle(fontWeight: FontWeight.bold)),
-                    Text(item.content,
-                        style: const TextStyle(
-                            color: AppColors.gray2Color, fontSize: 13)),
-                    Text(
-                      // ميرنا: استخدمنا toLocal هنا عشان الوقت يظهر بتوقيت مصر (GMT+3) بدل جرينتش
-                      DateFormat('hh:mm a').format(item.createdAt.toLocal()),
-                      style: const TextStyle(fontSize: 10, color: Colors.grey),
-                    ),
-                  ],
+      child: InkWell(
+        onTap: () async {
+          try {
+            await supabase
+                .from('notifications')
+                .update({'is_read': true})
+                .eq('id', item.id);
+          } catch (e) {
+            debugPrint("Error marking notification as read: $e");
+          }
+
+          if (item.type == 'invest' || item.type == 'chat') {
+            /* // TODO: فتح تفاصيل الفكرة من جهة رائد الأعمال
+            if (context.mounted && item.ideaId != null) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => EntrepreneurIdeaDetailsScreen(ideaId: item.ideaId),
                 ),
-              ),
-            ],
-          ),
-          // إظهار أزرار التحكم فقط إذا كان نوع الإشعار يتطلب رد ولم يتم قراءته بعد
-          if ((item.type == 'chat' || item.type == 'invest') && !item.isRead) ...[
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () async {
-                      try {
-                        // التأكد من وجود البيانات المطلوبة لتجنب خطأ Null Check
-                        if (item.requestId == null || item.ideaId == null) {
-                          throw Exception("Missing Request ID or Idea ID");
-                        }
+              );
+            }
+            */
+            return;
+          }
 
-                        // 1. جلب الـ sender_id (المستخدم الذي أرسل الطلب) من جدول requests
-                        final requestData = await supabase
-                            .from('requests')
-                            .select('sender_id')
-                            .eq('id', item.requestId!)
-                            .single();
+          if (item.requestId == null) return;
+          try {
+            final requestData = await supabase
+                .from('requests')
+                .select('sender_id, receiver_id')
+                .eq('id', item.requestId!)
+                .single();
 
-                        final String realSenderId = requestData['sender_id'];
+            String targetUserId = (item.type == 'chat_accepted')
+                ? requestData['receiver_id']
+                : requestData['sender_id'];
 
-                        // 2. تحديث حالة الطلب في قاعدة البيانات إلى مقبول
-                        await supabase
-                            .from('requests')
-                            .update({'status': 'accepted'})
-                            .eq('id', item.requestId!);
+            if (context.mounted) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => ProfileScreen(userId: targetUserId),
+                ),
+              );
+            }
+          } catch (e) {
+            debugPrint("Error fetching target profile ID: $e");
+          }
+        },
+        borderRadius: BorderRadius.circular(12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            GestureDetector(
+              onTap: () async {
+                if (item.requestId == null) return;
+                try {
+                  final requestData = await supabase
+                      .from('requests')
+                      .select('sender_id')
+                      .eq('id', item.requestId!)
+                      .single();
 
-                        // 3. إنشاء أو جلب المحادثة بين الطرفين لهذه الفكرة المحددة
-                        await chatService.getOrCreateChat(
-                          otherUserId: realSenderId,
-                          ideaId: item.ideaId!,
-                        );
-
-                        // 4. تحديث الإشعار ليصبح مقروءاً
-                        await supabase
-                            .from('notifications')
-                            .update({'is_read': true})
-                            .eq('id', item.id);
-
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text("Chat created! You can now start messaging.")),
-                          );
-                        }
-                      } catch (e) {
-                        debugPrint("Error in Accept process: $e");
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text("Error: ${e.toString()}")),
-                          );
-                        }
-                      }
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primaryColor,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
+                  if (context.mounted) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => ProfileScreen(userId: requestData['sender_id']),
                       ),
-                    ),
-                    child: const Text("Accept", style: TextStyle(color: Colors.white)),
-                  ),
+                    );
+                  }
+                } catch (e) {
+                  debugPrint("Error navigating to profile: $e");
+                }
+              },
+              child: CircleAvatar(
+                backgroundColor: item.isRead ? AppColors.bgGray : AppColors.primaryColor,
+                child: Icon(
+                  item.isRead ? Icons.notifications_none : Icons.notifications_active,
+                  color: item.isRead ? AppColors.grayColor : AppColors.bgColor,
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () async {
-                      try {
-                        // تحديث الطلب ليكون مرفوضاً وتحديث حالة الإشعار
-                        await supabase
-                            .from('requests')
-                            .update({'status': 'declined'})
-                            .eq('id', item.requestId!);
-
-                        await supabase
-                            .from('notifications')
-                            .update({'is_read': true})
-                            .eq('id', item.id);
-                      } catch (e) {
-                        debugPrint("Error in Decline process: $e");
-                      }
-                    },
-                    style: OutlinedButton.styleFrom(
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.title,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: item.isRead ? AppColors.grayColor : AppColors.blackColor,
                     ),
-                    child: const Text("Decline"),
                   ),
-                ),
-              ],
-            )
+                  const SizedBox(height: 4),
+                  Text(
+                    item.content,
+                    style: const TextStyle(
+                      color: AppColors.gray2Color,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    _getFormattedTime(item.createdAt),
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: AppColors.grayColor,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
-        ],
+        ),
       ),
     );
+  }
+
+  String _getFormattedTime(DateTime createdAt) {
+    final localDateTime = createdAt.toLocal();
+    final now = DateTime.now();
+
+    final today = DateTime(now.year, now.month, now.day);
+    final notificationDate = DateTime(localDateTime.year, localDateTime.month, localDateTime.day);
+    final differenceInDays = today.difference(notificationDate).inDays;
+
+    if (differenceInDays == 0) {
+      return DateFormat('hh:mm a').format(localDateTime);
+    } else if (differenceInDays == 1) {
+      return 'Yesterday';
+    } else if (differenceInDays < 7) {
+      return '$differenceInDays d ago';
+    } else {
+      return DateFormat('dd MMM').format(localDateTime);
+    }
   }
 }

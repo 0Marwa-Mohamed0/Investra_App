@@ -73,7 +73,7 @@ class EntrepreneurHomePage extends StatelessWidget {
                     const SizedBox(height: 32),
                     const BuildSectionHeader(title: 'Recent Chat Requests', action: ''),
                     const SizedBox(height: 12),
-                    _buildChatRequestsStream(supabase, userId), // الستريم المصلح
+                    _buildChatRequestsStream(supabase, userId),
                     const SizedBox(height: 80),
                   ],
                 );
@@ -101,7 +101,6 @@ class EntrepreneurHomePage extends StatelessWidget {
     );
   }
 
-  // تم إصلاح الخطأ البرمجي هنا (حل مشكلة الصورة image_dc3ffe.jpg)
   Widget _buildChatRequestsStream(SupabaseClient supabase, String userId) {
     return StreamBuilder<List<Map<String, dynamic>>>(
       stream: supabase.from('requests').stream(primaryKey: ['id']).eq('receiver_id', userId),
@@ -110,28 +109,88 @@ class EntrepreneurHomePage extends StatelessWidget {
           return _buildEmptyState("No requests found.");
         }
 
-        // فلترة الطلبات المعلقة فقط برمجياً لتجنب خطأ الـ Stream
-        final pendingRequests = snapshot.data!
-            .where((req) => req['status'] == 'pending')
-            .take(3)
-            .toList();
+        final pendingChatRequests = snapshot.data!.where((req) {
+          final isPending = req['status'] == 'pending';
+          final content = (req['content'] ?? '').toString().toLowerCase();
+          final isInvestment = content.contains('investment') || content.contains('invest') || req['type'] == 'invest';
 
-        if (pendingRequests.isEmpty) {
-          return _buildEmptyState("No pending requests.");
+          return isPending && !isInvestment;
+        }).take(3).toList();
+
+        if (pendingChatRequests.isEmpty) {
+          return _buildEmptyState("No pending chat requests.");
         }
 
         return Column(
-          children: pendingRequests.map((req) => Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: BuildChatRequest(
+          children: pendingChatRequests.map((req) {
+            final String requestId = req['id'].toString();
+            final String investorId = req['sender_id'] ?? '';
+            final String? ideaId = req['idea_id']?.toString();
+
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: BuildChatRequest(
                 name: 'Investor Inquiry',
                 company: req['content'] ?? 'Interested in your idea',
-                icon: Icons.chat_bubble_outline
-            ),
-          )).toList(),
+                icon: Icons.chat_bubble_outline,
+                onAcceptTap: () => _processAccept(supabase, requestId, userId, investorId, ideaId, context),
+                onDeclineTap: () => _processDecline(supabase, requestId, context),
+              ),
+            );
+          }).toList(),
         );
       },
     );
+  }
+
+  Future<void> _processAccept(SupabaseClient supabase, String requestId, String userId, String investorId, String? ideaId, BuildContext context) async {
+    try {
+      await supabase.from('requests').update({'status': 'accepted'}).eq('id', requestId);
+
+      if (ideaId != null) {
+        final existingChat = await supabase
+            .from('chat')
+            .select('chat_id')
+            .eq('entrepreneur_id', userId)
+            .eq('investor_id', investorId)
+            .eq('idea_id', ideaId)
+            .maybeSingle();
+
+        if (existingChat == null) {
+          await supabase.from('chat').insert({
+            'entrepreneur_id': userId,
+            'investor_id': investorId,
+            'idea_id': ideaId,
+          });
+        }
+
+        await supabase.from('notifications').insert({
+          'user_id': investorId,
+          'title': 'Request Accepted! 🎉',
+          'content': 'Your request has been accepted. You can start chatting now!',
+          'type': 'chat_accepted',
+          'is_read': false,
+          'idea_id': ideaId,
+          'request_id': requestId,
+        });
+      }
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Chat created! Connection established.")));
+      }
+    } catch (e) {
+      debugPrint("Error accepting request: $e");
+    }
+  }
+
+  Future<void> _processDecline(SupabaseClient supabase, String requestId, BuildContext context) async {
+    try {
+      await supabase.from('requests').update({'status': 'declined'}).eq('id', requestId);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Request declined.")));
+      }
+    } catch (e) {
+      debugPrint("Error declining request: $e");
+    }
   }
 
   Widget _buildIdeaSection(List<Map<String, dynamic>> ideasList) {

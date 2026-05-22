@@ -65,7 +65,6 @@ class MainAppScreenState extends State<MainAppEnterpreneurScreen> {
         },
         child: IndexedStack(index: currentIndex, children: screens),
       ),
-      // استخدام AnimatedSize أو التحكم في الارتفاع مع ClipRect
       bottomNavigationBar: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
@@ -74,7 +73,6 @@ class MainAppScreenState extends State<MainAppEnterpreneurScreen> {
             MediaQuery.of(context).padding.bottom)
             : 0,
         child: Wrap(
-          // Wrap يمنع ظهور خطأ المساحة (Overflow) أثناء الاختفاء
           children: [_bottomNavBar()],
         ),
       ),
@@ -88,7 +86,7 @@ class MainAppScreenState extends State<MainAppEnterpreneurScreen> {
       onTap: (index) {
         setState(() {
           currentIndex = index;
-          _isVisible = true; // تظهر دائماً عند الضغط على أيقونة
+          _isVisible = true;
         });
       },
       type: BottomNavigationBarType.fixed,

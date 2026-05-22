@@ -35,7 +35,7 @@ class ActionButtonsSection extends StatelessWidget {
       child: ElevatedButton(
         onPressed: onPressed,
         style: ElevatedButton.styleFrom(
-          backgroundColor: isPrimary ? AppColors.primaryColor : AppColors.bgColor, // تطبيق الألوان
+          backgroundColor: isPrimary ? AppColors.primaryColor : AppColors.bgColor,
           side: isPrimary ? BorderSide.none : const BorderSide(color: AppColors.primaryColor),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           elevation: 0,

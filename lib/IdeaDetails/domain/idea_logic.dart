@@ -4,7 +4,6 @@ import 'package:investra/core/constants/app_images.dart';
 class IdeaLogic {
   final _supabase = Supabase.instance.client;
 
-  // جلب اسم رائد الأعمال من جدول User بناءً على userid (UUID)
   Future<String> getEntrepreneurName(String? userId) async {
     if (userId == null || userId.isEmpty) return 'Unknown User';
     try {
@@ -32,7 +31,6 @@ class IdeaLogic {
     }
   }
 
-  // إرسال الطلب وإضافة الإشعار مع الـ IDs الصحيحة
   Future<void> submitAction({
     required String ideaId,
     required String entrepreneurId,
@@ -43,32 +41,20 @@ class IdeaLogic {
     if (myId == null) throw Exception("Please login first");
 
     try {
-      // 1. إضافة الطلب في جدول الـ requests وجلب بيانات السطر المضاف فوراً
-      // نستخدم .select().single() لكي نحصل على الـ id الخاص بالطلب الجديد
-      final requestResponse = await _supabase.from('requests').insert({
+      final String requestContent = isChatRequest
+          ? 'Chat Request for: $ideaTitle'
+          : 'Investment Interest in: $ideaTitle';
+
+
+      await _supabase.from('requests').insert({
         'idea_id': ideaId,
         'sender_id': myId,
         'receiver_id': entrepreneurId,
-        'content': isChatRequest ? 'Chat Request for: $ideaTitle' : 'Investment Interest',
+        'content': requestContent,
         'status': 'pending',
-      }).select().single();
-
-      // الحصول على الـ ID الذي تم إنشاؤه للطلب
-      final String newRequestId = requestResponse['id'];
-
-      // 2. إضافة الإشعار في جدول الـ notifications مع تمرير المعرفات المطلوبة
-      // نمرر idea_id و request_id لكي يتمكن زر Accept من العمل لاحقاً
-      await _supabase.from('notifications').insert({
-        'user_id': entrepreneurId,
-        'title': isChatRequest ? 'New Chat Request' : 'Investment Interest',
-        'content': 'An investor is interested in your project: $ideaTitle',
-        'type': isChatRequest ? 'chat' : 'invest',
-        'is_read': false,
-        'idea_id': ideaId,       // تم إضافة هذا الحقل
-        'request_id': newRequestId, // تم إضافة هذا الحقل
       });
 
-      print("Success: Request and Notification sent with IDs (Request ID: $newRequestId)");
+      print("Success: Request sent. Supabase Trigger will handle the notification.");
     } catch (e) {
       print("Submit Error Details: $e");
       rethrow;
