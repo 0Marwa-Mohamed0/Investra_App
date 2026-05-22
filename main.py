@@ -19,7 +19,7 @@ load_dotenv()
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY") # تأكدي أن هذا هو Service Role Key في الـ .env لحماية الـ RLS
+SUPABASE_KEY = os.getenv("SUPABASE_KEY") 
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
@@ -144,20 +144,15 @@ async def evaluate_pitch(
     )
 
     result = response.choices[0].message.content
-    current_time = datetime.now(timezone.utc).isoformat()
-
-    # توليد الـ session_id مسبقاً لضمان الأمان وتجنب خطأ الـ index out of range
     generated_session_id = str(uuid.uuid4())
 
     try:
-        # 1. إنشاء session جديدة في AI_Sessions
+        # 1. إنشاء session جديدة في AI_Sessions (👈 تعديل: تم إزالة التوقيت اليدوي لـ Supabase)
         supabase.table("AI_Sessions").insert({
             "session_id": generated_session_id,
             "user_id": user_id,
             "title": f"تقييم: {filename}",
-            "last_message_snippet": result[:100],
-            "created_at": current_time,
-            "updated_at": current_time
+            "last_message_snippet": result[:100]
         }).execute()
         
         session_id = generated_session_id
@@ -166,32 +161,28 @@ async def evaluate_pitch(
         return {"status": "error", "message": f"Supabase Error (AI_Sessions Create Failed): {str(db_err)}"}
 
     try:
-        # 2. حفظ رسالة المستخدم في AI_Messages
+        # 2. حفظ رسالة المستخدم في AI_Messages (👈 تعديل: تم إزالة التوقيت اليدوي لـ Supabase)
         supabase.table("AI_Messages").insert({
             "message_id": str(uuid.uuid4()),
             "session_id": session_id,
             "sender_role": "user",
             "content": f"طلب تقييم الملف: {filename}",
-            "file_name": filename,
-            "created_at": current_time
+            "file_name": filename
         }).execute()
 
-        # 3. حفظ رد الـ AI في AI_Messages
+        # 3. حفظ رد الـ AI في AI_Messages (👈 تعديل: تم إزالة التوقيت اليدوي لـ Supabase)
         supabase.table("AI_Messages").insert({
             "message_id": str(uuid.uuid4()),
             "session_id": session_id,
             "sender_role": "assistant",
-            "content": result,
-            "created_at": current_time
+            "content": result
         }).execute()
         
     except Exception as db_err:
         return {"status": "error", "message": f"Supabase Error (AI_Messages Save Failed): {str(db_err)}"}
 
-    # 4. تحديث ai_rating في ideas لو في idea_id
     if idea_id:
         try:
-            # محاولة البحث عن الرقم في أول سطرين لتفادي التنسيقات الغريبة من الـ AI
             lines = result.strip().split('\n')
             rating_line = lines[0] if "ating" in lines[0] else lines[1]
             rating_num = float(''.join(c for c in rating_line if c.isdigit() or c == '.'))
@@ -221,29 +212,36 @@ class ChatInput(BaseModel):
     history: str = "[]"
     session_id: str = None
     user_id: str = None
+    user_time: str = None  # 👈 تعديل: إضافة المتغير لاستقبال توقيت جهازك
 
 # ============================================================
 # /chat — محادثة عادية مع حفظ في Supabase
 # ============================================================
 @app.post("/chat")
 async def chat(data: ChatInput):
-    # فك المتغيرات لضمان عمل نفس منطق الكود الخاص بك دون أي تغيير
     message = data.message
     history = data.history
     session_id = clean_uuid(data.session_id)
     user_id = clean_uuid(data.user_id)
+    user_time = data.user_time  # 👈 تعديل: استخراج قيمة التوقيت القادم من التطبيق
 
     try:
         chat_history = json.loads(history) if history and history.strip() not in ["", "[]"] else []
     except:
         chat_history = []
 
+    # 👈 تعديل: دمج التوقيت الحالي بداخل تعليمات النظام ليفهم الـ AI الوقت الحالي
+    system_content = """You are an AI assistant specialized in business analysis, 
+    startup evaluation, and connecting entrepreneurs with investors. 
+    Help users improve their business ideas and pitch decks."""
+    
+    if user_time:
+        system_content += f"\n[The user's current local time is: {user_time}. Always reference this exact time and date context if the user asks about time, history, or scheduling.]"
+
     messages = [
         {
             "role": "system",
-            "content": """You are an AI assistant specialized in business analysis, 
-            startup evaluation, and connecting entrepreneurs with investors. 
-            Help users improve their business ideas and pitch decks."""
+            "content": system_content
         }
     ]
 
@@ -259,19 +257,17 @@ async def chat(data: ChatInput):
     )
 
     ai_response = response.choices[0].message.content
-    current_time = datetime.now(timezone.utc).isoformat()
 
     # 1. لو مفيش session_id → ابدأ session جديدة
     if not session_id:
         generated_session_id = str(uuid.uuid4())
         try:
+            # 👈 تعديل: تم إزالة التوقيت اليدوي لـ Supabase
             supabase.table("AI_Sessions").insert({
                 "session_id": generated_session_id,
                 "user_id": user_id,
                 "title": message[:50],
-                "last_message_snippet": ai_response[:100],
-                "created_at": current_time,
-                "updated_at": current_time
+                "last_message_snippet": ai_response[:100]
             }).execute()
             
             session_id = generated_session_id
@@ -279,30 +275,28 @@ async def chat(data: ChatInput):
             return {"status": "error", "message": f"Supabase Error (AI_Sessions Create Failed): {str(db_err)}"}
     else:
         try:
+            # 👈 تعديل: تم إزالة التوقيت اليدوي لـ Supabase
             supabase.table("AI_Sessions").update({
-                "last_message_snippet": ai_response[:100],
-                "updated_at": current_time
+                "last_message_snippet": ai_response[:100]
             }).eq("session_id", session_id).execute()
         except Exception as db_err:
             return {"status": "error", "message": f"Supabase Error (AI_Sessions Update Failed): {str(db_err)}"}
 
     try:
-        # 2. حفظ رسالة المستخدم في AI_Messages
+        # 2. حفظ رسالة المستخدم في AI_Messages (👈 تعديل: تم إزالة التوقيت اليدوي لـ Supabase)
         supabase.table("AI_Messages").insert({
             "message_id": str(uuid.uuid4()),
             "session_id": session_id,
             "sender_role": "user",
-            "content": message,
-            "created_at": current_time
+            "content": message
         }).execute()
 
-        # 3. حفظ رد الـ AI في AI_Messages
+        # 3. حفظ رد الـ AI في AI_Messages (👈 تعديل: تم إزالة التوقيت اليدوي لـ Supabase)
         supabase.table("AI_Messages").insert({
             "message_id": str(uuid.uuid4()),
             "session_id": session_id,
             "sender_role": "assistant",
-            "content": ai_response,
-            "created_at": current_time
+            "content": ai_response
         }).execute()
     except Exception as db_err:
         return {"status": "error", "message": f"Supabase Error (AI_Messages Save Failed): {str(db_err)}"}
