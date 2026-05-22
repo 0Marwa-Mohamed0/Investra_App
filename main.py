@@ -146,36 +146,47 @@ async def evaluate_pitch(
     result = response.choices[0].message.content
     current_time = datetime.now(timezone.utc).isoformat()
 
-    # 1. إنشاء session جديدة في AI_Sessions
-    session_data = supabase.table("AI_Sessions").insert({
-        "session_id": str(uuid.uuid4()),
-        "user_id": user_id,
-        "title": f"تقييم: {filename}",
-        "last_message_snippet": result[:100],
-        "created_at": current_time,
-        "updated_at": current_time
-    }).execute()
+    # توليد الـ session_id مسبقاً لضمان الأمان وتجنب خطأ الـ index out of range
+    generated_session_id = str(uuid.uuid4())
 
-    session_id = session_data.data[0]["session_id"]
+    try:
+        # 1. إنشاء session جديدة في AI_Sessions
+        supabase.table("AI_Sessions").insert({
+            "session_id": generated_session_id,
+            "user_id": user_id,
+            "title": f"تقييم: {filename}",
+            "last_message_snippet": result[:100],
+            "created_at": current_time,
+            "updated_at": current_time
+        }).execute()
+        
+        session_id = generated_session_id
 
-    # 2. حفظ رسالة المستخدم في AI_Messages
-    supabase.table("AI_Messages").insert({
-        "message_id": str(uuid.uuid4()),
-        "session_id": session_id,
-        "sender_role": "user",
-        "content": f"طلب تقييم الملف: {filename}",
-        "file_name": filename,
-        "created_at": current_time
-    }).execute()
+    except Exception as db_err:
+        return {"status": "error", "message": f"Supabase Error (AI_Sessions Create Failed): {str(db_err)}"}
 
-    # 3. حفظ رد الـ AI في AI_Messages
-    supabase.table("AI_Messages").insert({
-        "message_id": str(uuid.uuid4()),
-        "session_id": session_id,
-        "sender_role": "assistant",
-        "content": result,
-        "created_at": current_time
-    }).execute()
+    try:
+        # 2. حفظ رسالة المستخدم في AI_Messages
+        supabase.table("AI_Messages").insert({
+            "message_id": str(uuid.uuid4()),
+            "session_id": session_id,
+            "sender_role": "user",
+            "content": f"طلب تقييم الملف: {filename}",
+            "file_name": filename,
+            "created_at": current_time
+        }).execute()
+
+        # 3. حفظ رد الـ AI في AI_Messages
+        supabase.table("AI_Messages").insert({
+            "message_id": str(uuid.uuid4()),
+            "session_id": session_id,
+            "sender_role": "assistant",
+            "content": result,
+            "created_at": current_time
+        }).execute()
+        
+    except Exception as db_err:
+        return {"status": "error", "message": f"Supabase Error (AI_Messages Save Failed): {str(db_err)}"}
 
     # 4. تحديث ai_rating في ideas لو في idea_id
     if idea_id:
@@ -252,38 +263,49 @@ async def chat(data: ChatInput):
 
     # 1. لو مفيش session_id → ابدأ session جديدة
     if not session_id:
-        session_data = supabase.table("AI_Sessions").insert({
-            "session_id": str(uuid.uuid4()),
-            "user_id": user_id,
-            "title": message[:50],
-            "last_message_snippet": ai_response[:100],
-            "created_at": current_time,
-            "updated_at": current_time
-        }).execute()
-        session_id = session_data.data[0]["session_id"]
+        generated_session_id = str(uuid.uuid4())
+        try:
+            supabase.table("AI_Sessions").insert({
+                "session_id": generated_session_id,
+                "user_id": user_id,
+                "title": message[:50],
+                "last_message_snippet": ai_response[:100],
+                "created_at": current_time,
+                "updated_at": current_time
+            }).execute()
+            
+            session_id = generated_session_id
+        except Exception as db_err:
+            return {"status": "error", "message": f"Supabase Error (AI_Sessions Create Failed): {str(db_err)}"}
     else:
-        supabase.table("AI_Sessions").update({
-            "last_message_snippet": ai_response[:100],
-            "updated_at": current_time
-        }).eq("session_id", session_id).execute()
+        try:
+            supabase.table("AI_Sessions").update({
+                "last_message_snippet": ai_response[:100],
+                "updated_at": current_time
+            }).eq("session_id", session_id).execute()
+        except Exception as db_err:
+            return {"status": "error", "message": f"Supabase Error (AI_Sessions Update Failed): {str(db_err)}"}
 
-    # 2. حفظ رسالة المستخدم في AI_Messages
-    supabase.table("AI_Messages").insert({
-        "message_id": str(uuid.uuid4()),
-        "session_id": session_id,
-        "sender_role": "user",
-        "content": message,
-        "created_at": current_time
-    }).execute()
+    try:
+        # 2. حفظ رسالة المستخدم في AI_Messages
+        supabase.table("AI_Messages").insert({
+            "message_id": str(uuid.uuid4()),
+            "session_id": session_id,
+            "sender_role": "user",
+            "content": message,
+            "created_at": current_time
+        }).execute()
 
-    # 3. حفظ رد الـ AI في AI_Messages
-    supabase.table("AI_Messages").insert({
-        "message_id": str(uuid.uuid4()),
-        "session_id": session_id,
-        "sender_role": "assistant",
-        "content": ai_response,
-        "created_at": current_time
-    }).execute()
+        # 3. حفظ رد الـ AI في AI_Messages
+        supabase.table("AI_Messages").insert({
+            "message_id": str(uuid.uuid4()),
+            "session_id": session_id,
+            "sender_role": "assistant",
+            "content": ai_response,
+            "created_at": current_time
+        }).execute()
+    except Exception as db_err:
+        return {"status": "error", "message": f"Supabase Error (AI_Messages Save Failed): {str(db_err)}"}
 
     return {
         "response": ai_response,
