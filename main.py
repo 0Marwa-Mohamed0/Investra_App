@@ -18,7 +18,7 @@ load_dotenv()
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY") # تأكدي أن هذا هو Service Role Key في الـ .env لحماية الـ RLS
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
@@ -145,7 +145,6 @@ async def evaluate_pitch(
     result = response.choices[0].message.content
     current_time = datetime.now(timezone.utc).isoformat()
 
-    # 1. إنشاء session جديدة في AI_Sessions
     session_data = supabase.table("AI_Sessions").insert({
         "session_id": str(uuid.uuid4()),
         "user_id": user_id,
@@ -157,7 +156,6 @@ async def evaluate_pitch(
 
     session_id = session_data.data[0]["session_id"]
 
-    # 2. حفظ رسالة المستخدم في AI_Messages
     supabase.table("AI_Messages").insert({
         "message_id": str(uuid.uuid4()),
         "session_id": session_id,
@@ -167,7 +165,6 @@ async def evaluate_pitch(
         "created_at": current_time
     }).execute()
 
-    # 3. حفظ رد الـ AI في AI_Messages
     supabase.table("AI_Messages").insert({
         "message_id": str(uuid.uuid4()),
         "session_id": session_id,
@@ -176,10 +173,8 @@ async def evaluate_pitch(
         "created_at": current_time
     }).execute()
 
-    # 4. تحديث ai_rating في ideas لو في idea_id
     if idea_id:
         try:
-            # محاولة البحث عن الرقم في أول سطرين لتفادي التنسيقات الغريبة من الـ AI
             lines = result.strip().split('\n')
             rating_line = lines[0] if "ating" in lines[0] else lines[1]
             rating_num = float(''.join(c for c in rating_line if c.isdigit() or c == '.'))
@@ -202,7 +197,7 @@ async def evaluate_pitch(
     }
 
 # ============================================================
-# /chat — محادثة عادية مع حفظ في Supabase
+# /chat — محادثة عادية مع حفظ في Supabase (تم تعديلها لعدم تكرار الرسالة)
 # ============================================================
 @app.post("/chat")
 async def chat(
@@ -242,15 +237,13 @@ async def chat(
     ai_response = response.choices[0].message.content
     current_time = datetime.now(timezone.utc).isoformat()
 
-    # 1. لو مفيش session_id → ابدأ session جديدة
+    # 1. تحديث الـ Session
     if not session_id:
         session_data = supabase.table("AI_Sessions").insert({
             "session_id": str(uuid.uuid4()),
             "user_id": user_id,
             "title": message[:50],
             "last_message_snippet": ai_response[:100],
-            "created_at": current_time,
-            "updated_at": current_time
         }).execute()
         session_id = session_data.data[0]["session_id"]
     else:
@@ -259,16 +252,8 @@ async def chat(
             "updated_at": current_time
         }).eq("session_id", session_id).execute()
 
-    # 2. حفظ رسالة المستخدم في AI_Messages
-    supabase.table("AI_Messages").insert({
-        "message_id": str(uuid.uuid4()),
-        "session_id": session_id,
-        "sender_role": "user",
-        "content": message,
-        "created_at": current_time
-    }).execute()
-
-    # 3. حفظ رد الـ AI في AI_Messages
+    # 2. حفظ رد الـ AI فقط في AI_Messages
+    # (تم حذف كود حفظ رسالة المستخدم هنا لتفادي التكرار لأن التطبيق يحفظها بالفعل)
     supabase.table("AI_Messages").insert({
         "message_id": str(uuid.uuid4()),
         "session_id": session_id,
@@ -283,7 +268,7 @@ async def chat(
     }
 
 # ============================================================
-# /rate-ideas — تقييم تلقائي لكل الأفكار
+# /rate-ideas
 # ============================================================
 def get_ideas():
     response = supabase.table("ideas").select("*").execute()
@@ -322,7 +307,7 @@ def rate_ideas():
     return {"status": "done", "rated": len(ideas)}
 
 # ============================================================
-# /test-read — تجريبي بدون AI
+# /test-read
 # ============================================================
 @app.post("/test-read")
 async def test_read(file: UploadFile = File(...)):
