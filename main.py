@@ -249,7 +249,8 @@ async def chat(
             "user_id": user_id,
             "title": message[:50],
             "last_message_snippet": ai_response[:100],
-  
+            "created_at": current_time,
+            "updated_at": current_time
         }).execute()
         session_id = session_data.data[0]["session_id"]
     else:
