@@ -48,6 +48,27 @@ def clean_uuid(value):
     return cleaned
 
 # ============================================================
+# دالة توليد عنوان ذكي للمحادثة
+# ============================================================
+def generate_smart_title(user_message, ai_response):
+    prompt = f"""
+    Create a very short title (max 5 words) for this chat conversation based on the following interaction. 
+    Return ONLY the title, nothing else.
+    
+    User: {user_message}
+    AI: {ai_response}
+    """
+    try:
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=20
+        )
+        return response.choices[0].message.content.strip().replace('"', '')
+    except:
+        return user_message[:30] # Fallback في حال فشل الـ AI
+
+# ============================================================
 # دوال استخراج النص من الملفات
 # ============================================================
 def extract_text_from_pptx(file_bytes):
@@ -197,7 +218,7 @@ async def evaluate_pitch(
     }
 
 # ============================================================
-# /chat — محادثة عادية مع حفظ في Supabase (تم تعديلها لعدم تكرار الرسالة)
+# /chat — محادثة عادية مع حفظ في Supabase
 # ============================================================
 @app.post("/chat")
 async def chat(
@@ -239,10 +260,12 @@ async def chat(
 
     # 1. تحديث الـ Session
     if not session_id:
+        # هنا يتم توليد العنوان الذكي عند بداية المحادثة
+        smart_title = generate_smart_title(message, ai_response)
         session_data = supabase.table("AI_Sessions").insert({
             "session_id": str(uuid.uuid4()),
             "user_id": user_id,
-            "title": message[:50],
+            "title": smart_title, 
             "last_message_snippet": ai_response[:100],
         }).execute()
         session_id = session_data.data[0]["session_id"]
@@ -253,7 +276,6 @@ async def chat(
         }).eq("session_id", session_id).execute()
 
     # 2. حفظ رد الـ AI فقط في AI_Messages
-    # (تم حذف كود حفظ رسالة المستخدم هنا لتفادي التكرار لأن التطبيق يحفظها بالفعل)
     supabase.table("AI_Messages").insert({
         "message_id": str(uuid.uuid4()),
         "session_id": session_id,
