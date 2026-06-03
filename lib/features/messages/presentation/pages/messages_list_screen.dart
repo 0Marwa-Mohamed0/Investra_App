@@ -1,3 +1,7 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// 📁 المسار: lib/features/messages/presentation/pages/messages_list_screen.dart
+// ═══════════════════════════════════════════════════════════════════════════
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -8,7 +12,6 @@ import 'package:investra/features/messages/data/chat_supabase_service.dart';
 import 'package:investra/features/messages/domain/entities/chat_contact.dart';
 import 'package:investra/features/messages/presentation/pages/chat_screen.dart';
 import 'package:investra/features/messages/presentation/widgets/message_tile.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 class MessagesListScreen extends StatefulWidget {
   const MessagesListScreen({super.key});
@@ -22,31 +25,30 @@ class _MessagesListScreenState extends State<MessagesListScreen> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocus = FocusNode();
 
-  Timer? _debounce;
+  Timer? _searchDebounce;
+  Timer? _realtimeDebounce;
   String _searchQuery = '';
-
-  // ✅ القائمة الكاملة للشاتات — نحدثها يدوياً عند أي تغيير real-time
   List<ChatContact> _allContacts = [];
   bool _loading = true;
 
-  // ✅ Realtime channel لمراقبة جدول message
-  RealtimeChannel? _listChannel;
+  // ✅ Stream subscription على جدول message
+  StreamSubscription<List<Map<String, dynamic>>>? _streamSub;
 
   // ─────────────────────────────────────────────────────────────────────────
   @override
   void initState() {
     super.initState();
     _loadChats();
-    _subscribeToListChanges();
+    _startStream();
   }
 
   @override
   void dispose() {
-    _debounce?.cancel();
+    _searchDebounce?.cancel();
+    _realtimeDebounce?.cancel();
+    _streamSub?.cancel();
     _searchController.dispose();
     _searchFocus.dispose();
-    // ✅ إلغاء الاشتراك عند مغادرة الشاشة
-    _listChannel?.unsubscribe();
     super.dispose();
   }
 
@@ -65,22 +67,21 @@ class _MessagesListScreenState extends State<MessagesListScreen> {
     }
   }
 
-  // ✅ الاشتراك Real-time في جدول message كله
-  // لما يجي INSERT (رسالة جديدة) أو UPDATE ("is read" اتغير) → أعد تحميل القائمة
-  void _subscribeToListChanges() {
-    _listChannel = _service.subscribeToAllMyMessages(
-      onAnyChange: () {
-        // debounce بسيط عشان منكررش الـ fetch لو جاءت تحديثات متعددة متقاربة
-        _debounce?.cancel();
-        _debounce = Timer(const Duration(milliseconds: 300), _loadChats);
-      },
-    );
+  // ✅ .stream() على جدول message
+  // بيتحدث تلقائياً عند أي INSERT (رسالة جديدة) أو UPDATE (is read اتغير)
+  // → نعمل _loadChats() بـ debounce عشان نحدث الـ unreadCount
+  void _startStream() {
+    _streamSub = _service.streamAllMessages().listen((_) {
+      _realtimeDebounce?.cancel();
+      _realtimeDebounce =
+          Timer(const Duration(milliseconds: 400), _loadChats);
+    });
   }
 
-  // ── فلترة وترتيب القائمة ─────────────────────────────────────────────────
+  // ── فلترة وترتيب ─────────────────────────────────────────────────────────
   List<ChatContact> _filterAndSort(List<ChatContact> contacts) {
     final q = _searchQuery.trim().toLowerCase();
-    List<ChatContact> filtered = q.isEmpty
+    final filtered = q.isEmpty
         ? List<ChatContact>.from(contacts)
         : contacts.where((c) {
       return c.fullName.toLowerCase().contains(q) ||
@@ -142,15 +143,15 @@ class _MessagesListScreenState extends State<MessagesListScreen> {
                 focusNode: _searchFocus,
                 controller: _searchController,
                 cursorColor: theme.colorScheme.primary,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: AppColors.blackColor,
-                ),
+                style: theme.textTheme.bodyMedium
+                    ?.copyWith(color: AppColors.blackColor),
                 onChanged: (value) {
-                  _debounce?.cancel();
-                  _debounce =
+                  _searchDebounce?.cancel();
+                  _searchDebounce =
                       Timer(const Duration(milliseconds: 320), () {
                         if (mounted) {
-                          setState(() => _searchQuery = _searchController.text);
+                          setState(
+                                  () => _searchQuery = _searchController.text);
                         }
                       });
                 },
@@ -159,9 +160,8 @@ class _MessagesListScreenState extends State<MessagesListScreen> {
                   filled: true,
                   fillColor: AppColors.bgColor,
                   hintText: 'Search messages or people',
-                  hintStyle: theme.textTheme.bodySmall?.copyWith(
-                    color: AppColors.gray2Color,
-                  ),
+                  hintStyle: theme.textTheme.bodySmall
+                      ?.copyWith(color: AppColors.gray2Color),
                   prefixIcon: Padding(
                     padding: const EdgeInsets.only(left: 12, right: 8),
                     child: CustomSvgPicture(
@@ -177,11 +177,13 @@ class _MessagesListScreenState extends State<MessagesListScreen> {
                   ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Colors.transparent),
+                    borderSide:
+                    const BorderSide(color: Colors.transparent),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Colors.transparent),
+                    borderSide:
+                    const BorderSide(color: Colors.transparent),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -222,15 +224,13 @@ class _MessagesListScreenState extends State<MessagesListScreen> {
                     contact: c,
                     lastMessagePreview: c.lastMessagePreview,
                     onTap: () async {
-                      // ✅ الانتقال لشاشة الشات
                       await Navigator.push<void>(
                         context,
                         MaterialPageRoute<void>(
                           builder: (_) => ChatScreen(user: c),
                         ),
                       );
-                      // ✅ بعد الرجوع — أعد تحميل القائمة فوراً
-                      // عشان الـ badge يختفي لو فتحت الشات
+                      // ✅ بعد الرجوع مباشرة → أعد التحميل
                       _loadChats();
                     },
                   );

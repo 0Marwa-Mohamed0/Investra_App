@@ -67,10 +67,10 @@ class ChatBubble extends StatelessWidget {
               ),
               if (isOutgoing) ...[
                 const SizedBox(width: 4),
-                Icon(
-                  message.isRead ? Icons.done_all : Icons.check,
+                const Icon(
+                  Icons.check,
                   size: 16,
-                  color: message.isRead ? Colors.green : AppColors.primaryColor,
+                  color: AppColors.primaryColor,
                 ),
               ],
             ],

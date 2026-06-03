@@ -46,9 +46,6 @@ class MessageTile extends StatelessWidget {
                             ),
                           ),
                         ),
-                        if (contact.unreadCount > 0) const SizedBox(width: 8),
-                        if (contact.unreadCount > 0)
-                          _UnreadBadge(count: contact.unreadCount),
                       ],
                     ),
                     const SizedBox(height: 4),

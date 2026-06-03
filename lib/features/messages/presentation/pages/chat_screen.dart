@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:investra/core/constants/app_images.dart';
 import 'package:investra/core/styles/colors.dart';
@@ -13,7 +15,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key, required this.user});
-
   final ChatContact user;
 
   @override
@@ -25,116 +26,96 @@ class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _messageController = TextEditingController();
   final ChatSupabaseService _service = ChatSupabaseService();
 
-  late List<ChatThreadItem> _items;
-  bool _showJumpToLatest = false;
-  bool _loading = true;
+  // ✅ نستخدم StreamSubscription بدل RealtimeChannel
+  StreamSubscription<List<Map<String, dynamic>>>? _streamSub;
 
-  // ✅ عداد الرسائل الجديدة للـ Jump button
+  List<ChatThreadItem> _items = [];
+  bool _showJumpToLatest = false;
+  bool _isFirstLoad = true;
   int _newMessageCount = 0;
 
-  RealtimeChannel? _channel;
+  // نحتفظ بآخر Set من الـ IDs اللي عندنا عشان نعرف الجديد من القديم
+  final Set<String> _knownIds = {};
 
   ChatContact get _user => widget.user;
+  String get _myId => Supabase.instance.client.auth.currentUser!.id;
 
   // ─────────────────────────────────────────────────────────────────────────
   @override
   void initState() {
     super.initState();
-    _items = [];
     _scrollController.addListener(_handleScroll);
-    _loadMessages();
-    _subscribeRealtime();
-
-    // ✅ علّم الرسائل كمقروءة فور دخول الشاشة
-    _service.markMessagesAsRead(_user.id);
+    _startStream();
   }
 
   @override
   void dispose() {
-    _channel?.unsubscribe();
+    _streamSub?.cancel();
     _scrollController.removeListener(_handleScroll);
     _scrollController.dispose();
     _messageController.dispose();
     super.dispose();
   }
 
-  // ── تحميل الرسائل من Supabase ────────────────────────────────────────────
-  Future<void> _loadMessages() async {
-    try {
-      final msgs = await _service.fetchMessages(_user.id);
+  // ── ✅ Stream يستمع لجدول message مباشرة ─────────────────────────────────
+  // .stream() من Supabase شغّالة دايماً بدون إعدادات Realtime
+  // بتتحدث أوتوماتيك عند أي INSERT أو UPDATE في الـ chat_id ده
+  void _startStream() {
+    _streamSub = _service.streamMessages(_user.id).listen((rows) {
       if (!mounted) return;
 
+      final String myId = _myId;
       final List<ChatThreadItem> items = [];
       String? lastDate;
+      bool hasNewIncoming = false;
 
-      for (final msg in msgs) {
+      for (final r in rows) {
+        final msgId = r['messageid'].toString();
+        final dt = DateTime.tryParse(r['time stamp'] ?? '')?.toLocal();
+        final isFromUser = r['sender_id'] == myId;
+        const isRead = true; // تم جعلها true دائماً بناءً على طلب إزالة الـ seen
+
+        // ✅ اكتشاف رسائل جديدة من الطرف التاني (مش موجودة في _knownIds)
+        if (!isFromUser && !_knownIds.contains(msgId) && !_isFirstLoad) {
+          hasNewIncoming = true;
+        }
+
+        _knownIds.add(msgId);
+
         const dateLabel = 'TODAY';
         if (lastDate != dateLabel) {
           items.add(const ChatDateSeparatorItem(dateLabel));
           lastDate = dateLabel;
         }
-        items.add(ChatMessageItem(msg));
+
+        items.add(ChatMessageItem(ChatMessage(
+          id: msgId,
+          text: r['Message text'] ?? '',
+          isFromUser: isFromUser,
+          timeLabel: dt != null ? _formatTimeLocal(dt) : '',
+          isRead: isRead,
+        )));
       }
 
+      final wasFirstLoad = _isFirstLoad;
       setState(() {
         _items = items;
-        _loading = false;
+        _isFirstLoad = false;
+        if (hasNewIncoming && _showJumpToLatest) _newMessageCount++;
       });
 
-      WidgetsBinding.instance.addPostFrameCallback(
-            (_) => _scrollToBottom(animated: false),
-      );
-    } catch (e) {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  // ── ✅ Realtime ────────────────────────────────────────────────────────────
-  void _subscribeRealtime() {
-    _channel = _service.subscribeToMessages(
-      chatId: _user.id,
-
-      // رسالة جديدة وصلت من الطرف التاني
-      onNewMessage: (msg) {
-        if (!mounted) return;
-
-        // لو الرسالة مني أنا → مش محتاج نضيفها تاني (optimistic UI بالفعل ضافها)
-        if (msg.isFromUser) return;
-
-        // ✅ علّمها كمقروءة فوراً لأني داخل الشاشة
-        _service.markMessagesAsRead(_user.id);
-
-        setState(() {
-          _items.add(ChatMessageItem(msg));
-          // لو المستخدم مش في الأسفل → زوّد العداد
-          if (_showJumpToLatest) _newMessageCount++;
-        });
-
-        // لو كان في الأسفل → اسكرول أوتوماتيك
-        if (!_showJumpToLatest) {
-          WidgetsBinding.instance.addPostFrameCallback(
-                (_) => _scrollToBottom(animated: true),
-          );
-        }
-      },
-
-      // ✅ تحديث حالة القراءة — الطرف التاني فتح الشات وقرأ رسائلي
-      onMessageRead: (messageId, isRead) {
-        if (!mounted) return;
-        setState(() {
-          for (int i = 0; i < _items.length; i++) {
-            final item = _items[i];
-            if (item is ChatMessageItem &&
-                item.message.id == messageId &&
-                item.message.isFromUser) {
-              // ✅ حوّل علامة الصح الواحدة لعلامتين
-              _items[i] =
-                  ChatMessageItem(item.message.copyWith(isRead: true));
-            }
-          }
-        });
-      },
-    );
+      if (wasFirstLoad) {
+        // أول تحميل → اسكرول للأسفل بدون animation
+        WidgetsBinding.instance.addPostFrameCallback(
+              (_) => _scrollToBottom(animated: false),
+        );
+      } else if (hasNewIncoming && !_showJumpToLatest) {
+        // رسالة جديدة وأنا في الأسفل → اسكرول تلقائي
+        WidgetsBinding.instance.addPostFrameCallback(
+              (_) => _scrollToBottom(animated: true),
+        );
+      }
+    });
   }
 
   // ── scroll helpers ────────────────────────────────────────────────────────
@@ -146,7 +127,6 @@ class _ChatScreenState extends State<ChatScreen> {
     if (show != _showJumpToLatest) {
       setState(() {
         _showJumpToLatest = show;
-        // لو رجع للأسفل → صفّر العداد
         if (!show) _newMessageCount = 0;
       });
     }
@@ -171,48 +151,65 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _send() async {
     final t = _messageController.text.trim();
     if (t.isEmpty) return;
-
     _messageController.clear();
 
-    // Optimistic UI — أضف الرسالة فوراً
-    final optimisticMsg = ChatMessage(
-      id: 'local_${DateTime.now().microsecondsSinceEpoch}',
-      text: t,
-      isFromUser: true,
-      timeLabel: _timeNow(),
-      isRead: false,
-    );
-
-    setState(() => _items.add(ChatMessageItem(optimisticMsg)));
+    // ✅ Optimistic UI — أضف الرسالة فوراً بـ id مؤقت
+    // الـ stream سيستبدلها بالنسخة الحقيقية من DB في ثوانٍ
+    final tempId = 'local_${DateTime.now().microsecondsSinceEpoch}';
+    setState(() {
+      _items.add(ChatMessageItem(ChatMessage(
+        id: tempId,
+        text: t,
+        isFromUser: true,
+        timeLabel: _timeNow(),
+        isRead: false,
+      )));
+    });
     WidgetsBinding.instance.addPostFrameCallback(
           (_) => _scrollToBottom(animated: true),
     );
 
     try {
       await _service.sendMessage(chatId: _user.id, text: t);
+      // الـ stream هيتحدث أوتوماتيك بعد الـ INSERT ويضيف الرسالة الحقيقية
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('فشل الإرسال: $e')),
         );
+        // احذف الـ optimistic message لو فشل الإرسال
+        setState(() {
+          _items.removeWhere(
+                  (i) => i is ChatMessageItem && i.message.id == tempId);
+        });
       }
     }
+  }
+
+  String _formatTimeLocal(DateTime dt) {
+    final now = DateTime.now();
+    final diff = now.difference(dt);
+    if (diff.inDays == 0) {
+      final h = dt.hour > 12 ? dt.hour - 12 : dt.hour == 0 ? 12 : dt.hour;
+      final m = dt.minute.toString().padLeft(2, '0');
+      final ampm = dt.hour < 12 ? 'AM' : 'PM';
+      return '$h:$m $ampm';
+    }
+    if (diff.inDays == 1) return 'Yesterday';
+    if (diff.inDays < 7) return '${diff.inDays}d';
+    return '${dt.day}/${dt.month}';
   }
 
   String _timeNow() {
     final t = DateTime.now();
     final h24 = t.hour;
     final m = t.minute;
-    final h12 = h24 == 0
-        ? 12
-        : h24 > 12
-        ? h24 - 12
-        : h24;
+    final h12 = h24 == 0 ? 12 : h24 > 12 ? h24 - 12 : h24;
     final ampm = h24 < 12 ? 'AM' : 'PM';
     return '$h12:${m.toString().padLeft(2, '0')} $ampm';
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── Build ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -295,12 +292,11 @@ class _ChatScreenState extends State<ChatScreen> {
         children: [
           ProjectTopicBanner(text: topic),
           Expanded(
-            child: _loading
+            child: _isFirstLoad
                 ? const Center(child: CircularProgressIndicator())
                 : Stack(
               clipBehavior: Clip.none,
               children: [
-                // ── قائمة الرسائل ─────────────────────────────────
                 ListView.builder(
                   controller: _scrollController,
                   padding: const EdgeInsets.symmetric(
@@ -324,8 +320,6 @@ class _ChatScreenState extends State<ChatScreen> {
                     return const SizedBox.shrink();
                   },
                 ),
-
-                // ✅ زرار "اسكرول للأسفل" مع عداد الرسائل الجديدة
                 if (_showJumpToLatest)
                   Positioned(
                     left: 0,
@@ -384,9 +378,9 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// PRIVATE WIDGETS (بدون تغيير — نفس الكود القديم)
-// ════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+// PRIVATE WIDGETS
+// ═══════════════════════════════════════════════════════════════════════════
 
 class _HeaderAvatar extends StatelessWidget {
   const _HeaderAvatar({
