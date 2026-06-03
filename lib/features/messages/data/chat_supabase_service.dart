@@ -7,7 +7,7 @@ class ChatSupabaseService {
 
         String get _myId => _sb.auth.currentUser!.id;
 
-        // ─── 1. جيب كل الشاتات الخاصة بالمستخدم الحالي ───────────────────────────
+        // ── 1. جيب كل الشاتات الخاصة بالمستخدم ─────────────────────────────────
         Future<List<ChatContact>> fetchChats() async {
                 final rows = await _sb
                     .from('chat')
@@ -19,46 +19,66 @@ class ChatSupabaseService {
           created_at,
           ideas(title),
           message(
+            messageid,
             "Message text",
             "time stamp",
-            sender_id
+            sender_id,
+            "is read"
           )
         ''')
-                    .or('entrepreneur_id.eq.$_myId,investor_id.eq.$_myId')
-                    .order('created_at', ascending: false);
+                    .or('entrepreneur_id.eq.$_myId,investor_id.eq.$_myId');
 
                 final List<ChatContact> contacts = [];
 
                 for (final row in rows) {
                         final bool iAmEntrepreneur = row['entrepreneur_id'] == _myId;
-                        final String peerId = iAmEntrepreneur
-                            ? row['investor_id']
-                            : row['entrepreneur_id'];
+                        final String peerId =
+                        iAmEntrepreneur ? row['investor_id'] : row['entrepreneur_id'];
 
                         final profileRow = await _sb
-                            .from('profile')
-                            .select('FullName, profile_picture, email')
+                            .from('User')
+                            .select('FullName, email')
                             .eq('userid', peerId)
                             .maybeSingle();
 
-                        final String fullName = profileRow?['FullName'] ?? 'Unknown';
-                        final String? avatar = profileRow?['profile_picture'];
+                        String fullName = profileRow?['FullName'] ?? 'User';
+                        String? avatar;
+
+                        final p = await _sb
+                            .from('profile')
+                            .select('profile_picture')
+                            .eq('userid', peerId)
+                            .maybeSingle();
+                        avatar = p?['profile_picture'];
+
+                        if (fullName == 'User') {
+                                final nameFromProfile = await _sb
+                                    .from('profile')
+                                    .select('FullName')
+                                    .eq('userid', peerId)
+                                    .maybeSingle();
+                                if (nameFromProfile != null) fullName = nameFromProfile['FullName'];
+                        }
 
                         final List msgs = row['message'] ?? [];
-
-                        // ميرنا: الترتيب هنا بيعتمد على المابينج الصحيح لاسم العمود
-                        msgs.sort((a, b) => (a['time stamp'] ?? '')
-                            .compareTo(b['time stamp'] ?? ''));
+                        msgs.sort((a, b) =>
+                            (a['time stamp'] ?? '').compareTo(b['time stamp'] ?? ''));
 
                         final lastMsg = msgs.isNotEmpty ? msgs.last : null;
                         final String preview = lastMsg?['Message text'] ?? '...';
+
+                        // ✅ عدد الرسائل غير المقروءة المبعوتالي أنا فقط
+                        final int unreadCount = msgs
+                            .where((m) =>
+                        m['sender_id'] != _myId && (m['is read'] == false))
+                            .length;
 
                         final String timeAgo = lastMsg != null
                             ? _formatTime(DateTime.parse(lastMsg['time stamp']).toLocal())
                             : '';
 
-                        // التعديل هنا فقط: تحديد الـ Role بناءً على الـ investor_id الموجود في الـ chat row
-                        final String role = row['investor_id'] == peerId ? 'INVESTOR' : 'ENTREPRENEUR';
+                        final String role =
+                        row['investor_id'] == peerId ? 'INVESTOR' : 'ENTREPRENEUR';
 
                         contacts.add(ChatContact(
                                 id: row['chat_id'],
@@ -67,6 +87,7 @@ class ChatSupabaseService {
                                 avatarUrl: avatar,
                                 lastMessagePreview: preview,
                                 timeAgo: timeAgo,
+                                unreadCount: unreadCount,
                                 topicLabel: row['ideas']?['title'],
                                 lastMessageTime: lastMsg != null
                                     ? DateTime.parse(lastMsg['time stamp']).toLocal()
@@ -74,10 +95,14 @@ class ChatSupabaseService {
                         ));
                 }
 
+                contacts.sort((a, b) =>
+                    (b.lastMessageTime ?? DateTime(2000))
+                        .compareTo(a.lastMessageTime ?? DateTime(2000)));
+
                 return contacts;
         }
 
-        // ─── 2. جيب رسايل شات معين ────────────────────────────────────────────────
+        // ── 2. جيب رسائل شات معين ────────────────────────────────────────────────
         Future<List<ChatMessage>> fetchMessages(String chatId) async {
                 final rows = await _sb
                     .from('message')
@@ -97,7 +122,7 @@ class ChatSupabaseService {
                 }).toList();
         }
 
-        // ─── 3. ابعت رسالة ────────────────────────────────────────────────────────
+        // ── 3. ابعت رسالة ────────────────────────────────────────────────────────
         Future<void> sendMessage({
                 required String chatId,
                 required String text,
@@ -110,13 +135,27 @@ class ChatSupabaseService {
                 });
         }
 
-        // ─── 4. Realtime — استنى رسايل جديدة ─────────────────────────────────────
+        // ── 4. ✅ علّم كل الرسائل المبعوتالي في الشات كـ "مقروءة" ──────────────
+        Future<void> markMessagesAsRead(String chatId) async {
+                await _sb
+                    .from('message')
+                    .update({'is read': true})
+                    .eq('chat_id', chatId)
+                    .neq('sender_id', _myId)
+                    .eq('is read', false);
+        }
+
+        // ── 5. ✅ Realtime — استنى رسائل جديدة أو تحديثات (قراءة) ───────────────
+        //
+        // الجديد: أضفنا channel منفصل لمراقبة جدول message لكل تغيير
+        // عشان لما حد تاني يدخل الشات، نحدث علامات الصح فوراً
         RealtimeChannel subscribeToMessages({
                 required String chatId,
                 required void Function(ChatMessage msg) onNewMessage,
+                required void Function(String messageId, bool isRead) onMessageRead,
         }) {
                 return _sb
-                    .channel('messages:$chatId')
+                    .channel('chat_messages:$chatId')
                     .onPostgresChanges(
                         event: PostgresChangeEvent.insert,
                         schema: 'public',
@@ -128,11 +167,7 @@ class ChatSupabaseService {
                         ),
                         callback: (payload) {
                                 final r = payload.newRecord;
-
-                                // ميرنا: هذا هو المابينج (Mapping) الصحيح للبيانات القادمة من Realtime
-                                // سوبابيز يرسل الأسماء كما هي في الجداول
                                 final dt = DateTime.tryParse(r['time stamp'] ?? '')?.toLocal();
-
                                 final msg = ChatMessage(
                                         id: r['messageid']?.toString() ?? '',
                                         text: r['Message text'] ?? '',
@@ -143,10 +178,45 @@ class ChatSupabaseService {
                                 onNewMessage(msg);
                         },
                 )
+                    .onPostgresChanges(
+                        event: PostgresChangeEvent.update,
+                        schema: 'public',
+                        table: 'message',
+                        filter: PostgresChangeFilter(
+                                type: PostgresChangeFilterType.eq,
+                                column: 'chat_id',
+                                value: chatId,
+                        ),
+                        callback: (payload) {
+                                final r = payload.newRecord;
+                                // ✅ لما يتحدث "is read" لـ true → حدّث علامات الصح فوراً
+                                if (r['is read'] == true) {
+                                        onMessageRead(r['messageid'].toString(), true);
+                                }
+                        },
+                )
                     .subscribe();
         }
 
-        // ─── 5. اعمل شات جديد (لو مش موجود) ─────────────────────────────────────
+        // ── 6. ✅ Realtime لقائمة الشات — يراقب جدول message كله للمستخدم ────────
+        //
+        // بنستخدمه في MessagesListScreen عشان نحدث الـ unreadCount فوراً
+        // بدون الحاجة لإعادة fetch كاملة
+        RealtimeChannel subscribeToAllMyMessages({
+                required void Function() onAnyChange,
+        }) {
+                return _sb
+                    .channel('all_my_chats_$_myId')
+                    .onPostgresChanges(
+                        event: PostgresChangeEvent.all,
+                        schema: 'public',
+                        table: 'message',
+                        callback: (_) => onAnyChange(),
+                )
+                    .subscribe();
+        }
+
+        // ── 7. اعمل شات جديد (لو مش موجود) ────────────────────────────────────
         Future<String> getOrCreateChat({
                 required String otherUserId,
                 required String ideaId,
@@ -179,21 +249,25 @@ class ChatSupabaseService {
                 return created['chat_id'];
         }
 
-        // ─── Helpers ──────────────────────────────────────────────────────────────
+        // ── Helpers ──────────────────────────────────────────────────────────────
         Future<bool> _isEntrepreneur() async {
                 final row = await _sb
-                    .from('profile')
-                    .select('entrepreneur_details')
+                    .from('User')
+                    .select('role')
                     .eq('userid', _myId)
                     .maybeSingle();
-                return row?['entrepreneur_details'] != null;
+                return row?['role'] == 'Entrepreneur';
         }
 
         String _formatTime(DateTime dt) {
                 final now = DateTime.now();
                 final diff = now.difference(dt);
                 if (diff.inDays == 0) {
-                        final h = dt.hour > 12 ? dt.hour - 12 : dt.hour == 0 ? 12 : dt.hour;
+                        final h = dt.hour > 12
+                            ? dt.hour - 12
+                            : dt.hour == 0
+                            ? 12
+                            : dt.hour;
                         final m = dt.minute.toString().padLeft(2, '0');
                         final ampm = dt.hour < 12 ? 'AM' : 'PM';
                         return '$h:$m $ampm';

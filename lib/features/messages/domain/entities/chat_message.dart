@@ -13,4 +13,14 @@ class ChatMessage {
   final bool isFromUser;
   final String timeLabel;
   final bool isRead;
+
+  ChatMessage copyWith({bool? isRead}) {
+    return ChatMessage(
+      id: id,
+      text: text,
+      isFromUser: isFromUser,
+      timeLabel: timeLabel,
+      isRead: isRead ?? this.isRead,
+    );
+  }
 }

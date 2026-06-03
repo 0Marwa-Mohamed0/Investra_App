@@ -19,6 +19,7 @@ dependencies:
   supabase_flutter: ^2.12.4
   # تنسيق التاريخ والوقت
   intl: ^0.20.2
+  open_filex: ^4.7.0
 
 dev_dependencies:
   flutter_test:

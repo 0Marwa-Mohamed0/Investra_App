@@ -1,4 +1,5 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:investra/core/constants/app_images.dart';
 import 'package:investra/core/styles/colors.dart';
@@ -7,6 +8,7 @@ import 'package:investra/features/messages/data/chat_supabase_service.dart';
 import 'package:investra/features/messages/domain/entities/chat_contact.dart';
 import 'package:investra/features/messages/presentation/pages/chat_screen.dart';
 import 'package:investra/features/messages/presentation/widgets/message_tile.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class MessagesListScreen extends StatefulWidget {
   const MessagesListScreen({super.key});
@@ -19,10 +21,63 @@ class _MessagesListScreenState extends State<MessagesListScreen> {
   final _service = ChatSupabaseService();
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocus = FocusNode();
+
   Timer? _debounce;
   String _searchQuery = '';
 
-  // دالة الفلترة والترتيب بناءً على البحث
+  // ✅ القائمة الكاملة للشاتات — نحدثها يدوياً عند أي تغيير real-time
+  List<ChatContact> _allContacts = [];
+  bool _loading = true;
+
+  // ✅ Realtime channel لمراقبة جدول message
+  RealtimeChannel? _listChannel;
+
+  // ─────────────────────────────────────────────────────────────────────────
+  @override
+  void initState() {
+    super.initState();
+    _loadChats();
+    _subscribeToListChanges();
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _searchController.dispose();
+    _searchFocus.dispose();
+    // ✅ إلغاء الاشتراك عند مغادرة الشاشة
+    _listChannel?.unsubscribe();
+    super.dispose();
+  }
+
+  // ── جلب القائمة من Supabase ───────────────────────────────────────────────
+  Future<void> _loadChats() async {
+    try {
+      final contacts = await _service.fetchChats();
+      if (mounted) {
+        setState(() {
+          _allContacts = contacts;
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  // ✅ الاشتراك Real-time في جدول message كله
+  // لما يجي INSERT (رسالة جديدة) أو UPDATE ("is read" اتغير) → أعد تحميل القائمة
+  void _subscribeToListChanges() {
+    _listChannel = _service.subscribeToAllMyMessages(
+      onAnyChange: () {
+        // debounce بسيط عشان منكررش الـ fetch لو جاءت تحديثات متعددة متقاربة
+        _debounce?.cancel();
+        _debounce = Timer(const Duration(milliseconds: 300), _loadChats);
+      },
+    );
+  }
+
+  // ── فلترة وترتيب القائمة ─────────────────────────────────────────────────
   List<ChatContact> _filterAndSort(List<ChatContact> contacts) {
     final q = _searchQuery.trim().toLowerCase();
     List<ChatContact> filtered = q.isEmpty
@@ -41,17 +96,11 @@ class _MessagesListScreenState extends State<MessagesListScreen> {
     return filtered;
   }
 
-  @override
-  void dispose() {
-    _debounce?.cancel();
-    _searchController.dispose();
-    _searchFocus.dispose();
-    super.dispose();
-  }
-
+  // ─────────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final visible = _filterAndSort(_allContacts);
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -70,6 +119,7 @@ class _MessagesListScreenState extends State<MessagesListScreen> {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // ── Search Bar ─────────────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
             child: DecoratedBox(
@@ -97,11 +147,12 @@ class _MessagesListScreenState extends State<MessagesListScreen> {
                 ),
                 onChanged: (value) {
                   _debounce?.cancel();
-                  _debounce = Timer(const Duration(milliseconds: 320), () {
-                    if (mounted) {
-                      setState(() => _searchQuery = _searchController.text);
-                    }
-                  });
+                  _debounce =
+                      Timer(const Duration(milliseconds: 320), () {
+                        if (mounted) {
+                          setState(() => _searchQuery = _searchController.text);
+                        }
+                      });
                 },
                 decoration: InputDecoration(
                   isDense: true,
@@ -143,58 +194,48 @@ class _MessagesListScreenState extends State<MessagesListScreen> {
               ),
             ),
           ),
+
+          // ── قائمة الشاتات ──────────────────────────────────────────────
           Expanded(
-            child: StreamBuilder<List<ChatContact>>(
-              // نستخدم Stream يقوم بتحديث البيانات كل ثانيتين لضمان ظهور الشات الجديد فوراً
-              stream: Stream.periodic(const Duration(seconds: 2))
-                  .asyncMap((_) => _service.fetchChats()),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-
-                if (snapshot.hasError) {
-                  return Center(child: Text("Error loading chats: ${snapshot.error}"));
-                }
-
-                final allContacts = snapshot.data ?? [];
-                final visible = _filterAndSort(allContacts);
-
-                if (visible.isEmpty) {
-                  return Center(
-                    child: Text(
-                      'No matches',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: AppColors.gray2Color,
-                      ),
-                    ),
-                  );
-                }
-
-                return RefreshIndicator(
-                  onRefresh: () async => await _service.fetchChats(),
-                  child: ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                    itemCount: visible.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 6),
-                    itemBuilder: (context, index) {
-                      final c = visible[index];
-                      return MessageTile(
-                        contact: c,
-                        lastMessagePreview: c.lastMessagePreview,
-                        onTap: () async {
-                          await Navigator.push<void>(
-                            context,
-                            MaterialPageRoute<void>(
-                              builder: (_) => ChatScreen(user: c),
-                            ),
-                          );
-                        },
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : visible.isEmpty
+                ? Center(
+              child: Text(
+                'No matches',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: AppColors.gray2Color,
+                ),
+              ),
+            )
+                : RefreshIndicator(
+              onRefresh: _loadChats,
+              child: ListView.separated(
+                padding:
+                const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                itemCount: visible.length,
+                separatorBuilder: (_, __) =>
+                const SizedBox(height: 6),
+                itemBuilder: (context, index) {
+                  final c = visible[index];
+                  return MessageTile(
+                    contact: c,
+                    lastMessagePreview: c.lastMessagePreview,
+                    onTap: () async {
+                      // ✅ الانتقال لشاشة الشات
+                      await Navigator.push<void>(
+                        context,
+                        MaterialPageRoute<void>(
+                          builder: (_) => ChatScreen(user: c),
+                        ),
                       );
+                      // ✅ بعد الرجوع — أعد تحميل القائمة فوراً
+                      // عشان الـ badge يختفي لو فتحت الشات
+                      _loadChats();
                     },
-                  ),
-                );
-              },
+                  );
+                },
+              ),
             ),
           ),
         ],

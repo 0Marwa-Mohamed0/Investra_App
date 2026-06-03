@@ -2,14 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:investra/core/constants/app_images.dart';
 import 'package:investra/core/styles/colors.dart';
 import 'package:investra/core/widgets/custom_svg_picture.dart';
-import 'package:investra/features/messages/data/chat_supabase_service.dart'; // ← جديد
+import 'package:investra/features/messages/data/chat_supabase_service.dart';
 import 'package:investra/features/messages/domain/entities/chat_contact.dart';
 import 'package:investra/features/messages/domain/entities/chat_message.dart';
 import 'package:investra/features/messages/domain/entities/chat_thread_item.dart';
 import 'package:investra/features/messages/presentation/widgets/chat_bubble.dart';
 import 'package:investra/features/messages/presentation/widgets/chat_attachment_bottom_sheet.dart';
 import 'package:investra/features/messages/presentation/widgets/message_input_bar.dart';
-import 'package:supabase_flutter/supabase_flutter.dart'; // ← جديد
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key, required this.user});
@@ -23,25 +23,42 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _messageController = TextEditingController();
-  final ChatSupabaseService _service = ChatSupabaseService(); // ← جديد
+  final ChatSupabaseService _service = ChatSupabaseService();
 
   late List<ChatThreadItem> _items;
   bool _showJumpToLatest = false;
-  bool _loading = true; // ← جديد
-  RealtimeChannel? _channel; // ← جديد
+  bool _loading = true;
+
+  // ✅ عداد الرسائل الجديدة للـ Jump button
+  int _newMessageCount = 0;
+
+  RealtimeChannel? _channel;
 
   ChatContact get _user => widget.user;
 
+  // ─────────────────────────────────────────────────────────────────────────
   @override
   void initState() {
     super.initState();
     _items = [];
     _scrollController.addListener(_handleScroll);
-    _loadMessages(); // ← جديد
-    _subscribeRealtime(); // ← جديد
+    _loadMessages();
+    _subscribeRealtime();
+
+    // ✅ علّم الرسائل كمقروءة فور دخول الشاشة
+    _service.markMessagesAsRead(_user.id);
   }
 
-  // ↓ جديد: جيب الرسايل من Supabase
+  @override
+  void dispose() {
+    _channel?.unsubscribe();
+    _scrollController.removeListener(_handleScroll);
+    _scrollController.dispose();
+    _messageController.dispose();
+    super.dispose();
+  }
+
+  // ── تحميل الرسائل من Supabase ────────────────────────────────────────────
   Future<void> _loadMessages() async {
     try {
       final msgs = await _service.fetchMessages(_user.id);
@@ -51,10 +68,9 @@ class _ChatScreenState extends State<ChatScreen> {
       String? lastDate;
 
       for (final msg in msgs) {
-        // استخرج التاريخ من الـ timeLabel — هنستخدم today/yesterday بشكل مبسط
-        final dateLabel = 'TODAY';
+        const dateLabel = 'TODAY';
         if (lastDate != dateLabel) {
-          items.add(ChatDateSeparatorItem(dateLabel));
+          items.add(const ChatDateSeparatorItem(dateLabel));
           lastDate = dateLabel;
         }
         items.add(ChatMessageItem(msg));
@@ -73,38 +89,66 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  // ↓ جديد: استنى رسايل جديدة بالـ Realtime
+  // ── ✅ Realtime ────────────────────────────────────────────────────────────
   void _subscribeRealtime() {
     _channel = _service.subscribeToMessages(
       chatId: _user.id,
+
+      // رسالة جديدة وصلت من الطرف التاني
       onNewMessage: (msg) {
         if (!mounted) return;
-        // متضيفش رسايلك انت تاني (بعتها بالفعل في _send)
+
+        // لو الرسالة مني أنا → مش محتاج نضيفها تاني (optimistic UI بالفعل ضافها)
         if (msg.isFromUser) return;
-        setState(() => _items.add(ChatMessageItem(msg)));
-        WidgetsBinding.instance.addPostFrameCallback(
-              (_) => _scrollToBottom(animated: true),
-        );
+
+        // ✅ علّمها كمقروءة فوراً لأني داخل الشاشة
+        _service.markMessagesAsRead(_user.id);
+
+        setState(() {
+          _items.add(ChatMessageItem(msg));
+          // لو المستخدم مش في الأسفل → زوّد العداد
+          if (_showJumpToLatest) _newMessageCount++;
+        });
+
+        // لو كان في الأسفل → اسكرول أوتوماتيك
+        if (!_showJumpToLatest) {
+          WidgetsBinding.instance.addPostFrameCallback(
+                (_) => _scrollToBottom(animated: true),
+          );
+        }
+      },
+
+      // ✅ تحديث حالة القراءة — الطرف التاني فتح الشات وقرأ رسائلي
+      onMessageRead: (messageId, isRead) {
+        if (!mounted) return;
+        setState(() {
+          for (int i = 0; i < _items.length; i++) {
+            final item = _items[i];
+            if (item is ChatMessageItem &&
+                item.message.id == messageId &&
+                item.message.isFromUser) {
+              // ✅ حوّل علامة الصح الواحدة لعلامتين
+              _items[i] =
+                  ChatMessageItem(item.message.copyWith(isRead: true));
+            }
+          }
+        });
       },
     );
   }
 
-  @override
-  void dispose() {
-    _channel?.unsubscribe(); // ← جديد
-    _scrollController.removeListener(_handleScroll);
-    _scrollController.dispose();
-    _messageController.dispose();
-    super.dispose();
-  }
-
+  // ── scroll helpers ────────────────────────────────────────────────────────
   void _handleScroll() {
     if (!_scrollController.hasClients) return;
     final p = _scrollController.position;
     final atBottom = p.pixels >= p.maxScrollExtent - 48;
     final show = !atBottom;
     if (show != _showJumpToLatest) {
-      setState(() => _showJumpToLatest = show);
+      setState(() {
+        _showJumpToLatest = show;
+        // لو رجع للأسفل → صفّر العداد
+        if (!show) _newMessageCount = 0;
+      });
     }
   }
 
@@ -120,16 +164,17 @@ class _ChatScreenState extends State<ChatScreen> {
     } else {
       _scrollController.jumpTo(target);
     }
+    setState(() => _newMessageCount = 0);
   }
 
-  // ↓ بدلنا _send لترفع على Supabase
+  // ── إرسال رسالة ──────────────────────────────────────────────────────────
   Future<void> _send() async {
     final t = _messageController.text.trim();
     if (t.isEmpty) return;
 
     _messageController.clear();
 
-    // أضف الرسالة فورًا على الشاشة
+    // Optimistic UI — أضف الرسالة فوراً
     final optimisticMsg = ChatMessage(
       id: 'local_${DateTime.now().microsecondsSinceEpoch}',
       text: t,
@@ -143,7 +188,6 @@ class _ChatScreenState extends State<ChatScreen> {
           (_) => _scrollToBottom(animated: true),
     );
 
-    // ابعتها على Supabase
     try {
       await _service.sendMessage(chatId: _user.id, text: t);
     } catch (e) {
@@ -168,6 +212,7 @@ class _ChatScreenState extends State<ChatScreen> {
     return '$h12:${m.toString().padLeft(2, '0')} $ampm';
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -212,11 +257,11 @@ class _ChatScreenState extends State<ChatScreen> {
                     ),
                   ),
                   Text(
-                    _user.roleSubtitle,
+                    _user.roleSubtitle.toUpperCase(),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.labelSmall?.copyWith(
-                      color: theme.colorScheme.primary.withValues(alpha: 0.75),
+                      color: theme.colorScheme.primary.withOpacity(0.75),
                       letterSpacing: 0.9,
                     ),
                   ),
@@ -251,11 +296,11 @@ class _ChatScreenState extends State<ChatScreen> {
           ProjectTopicBanner(text: topic),
           Expanded(
             child: _loading
-            // ↓ شاشة تحميل
                 ? const Center(child: CircularProgressIndicator())
                 : Stack(
               clipBehavior: Clip.none,
               children: [
+                // ── قائمة الرسائل ─────────────────────────────────
                 ListView.builder(
                   controller: _scrollController,
                   padding: const EdgeInsets.symmetric(
@@ -279,6 +324,8 @@ class _ChatScreenState extends State<ChatScreen> {
                     return const SizedBox.shrink();
                   },
                 ),
+
+                // ✅ زرار "اسكرول للأسفل" مع عداد الرسائل الجديدة
                 if (_showJumpToLatest)
                   Positioned(
                     left: 0,
@@ -290,7 +337,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         borderRadius: BorderRadius.circular(20),
                         elevation: 2,
                         child: InkWell(
-                          onTap: _scrollToBottom,
+                          onTap: () => _scrollToBottom(),
                           borderRadius: BorderRadius.circular(20),
                           child: Padding(
                             padding: const EdgeInsets.symmetric(
@@ -307,9 +354,11 @@ class _ChatScreenState extends State<ChatScreen> {
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
-                                  '1 New Message',
-                                  style:
-                                  theme.textTheme.labelSmall?.copyWith(
+                                  _newMessageCount > 0
+                                      ? '$_newMessageCount New Message${_newMessageCount > 1 ? 's' : ''}'
+                                      : 'Jump to latest',
+                                  style: theme.textTheme.labelSmall
+                                      ?.copyWith(
                                     color: AppColors.bgColor,
                                     fontWeight: FontWeight.bold,
                                   ),
@@ -335,6 +384,10 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// PRIVATE WIDGETS (بدون تغيير — نفس الكود القديم)
+// ════════════════════════════════════════════════════════════════════════════
+
 class _HeaderAvatar extends StatelessWidget {
   const _HeaderAvatar({
     required this.imageUrl,
@@ -354,7 +407,8 @@ class _HeaderAvatar extends StatelessWidget {
         CircleAvatar(
           radius: 20,
           backgroundColor: AppColors.bgGray,
-          backgroundImage: imageUrl != null ? NetworkImage(imageUrl!) : null,
+          backgroundImage:
+          imageUrl != null ? NetworkImage(imageUrl!) : null,
           child: imageUrl == null
               ? Text(
             name.isNotEmpty ? name[0].toUpperCase() : '?',

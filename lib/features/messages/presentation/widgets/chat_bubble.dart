@@ -70,7 +70,7 @@ class ChatBubble extends StatelessWidget {
                 Icon(
                   message.isRead ? Icons.done_all : Icons.check,
                   size: 16,
-                  color: AppColors.primaryColor,
+                  color: message.isRead ? Colors.green : AppColors.primaryColor,
                 ),
               ],
             ],
