@@ -4,6 +4,8 @@ import 'package:investra/core/styles/colors.dart';
 import 'package:investra/core/widgets/custom_svg_picture.dart';
 import 'package:investra/features/messages/presentation/widgets/chat_attachment_bottom_sheet.dart';
 import 'package:investra/features/submit_idea/presentation/widgets/submit_button.dart';
+import 'package:investra/core/widgets/custom_snackbar.dart';
+import 'package:investra/features/submit_idea/data/services/submit_idea_service.dart';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -20,6 +22,7 @@ class SubmitIdeaScreen extends StatefulWidget {
 class _SubmitIdeaScreenState extends State<SubmitIdeaScreen> {
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _pitchController = TextEditingController();
+  final SubmitIdeaService _submitIdeaService = SubmitIdeaService();
 
   File? _businessPlanFile;
   File? _feasibilityFile;
@@ -114,46 +117,23 @@ class _SubmitIdeaScreenState extends State<SubmitIdeaScreen> {
   // 2. الوظيفة النهائية لرفع الملفات للـ Storage وحفظ البيانات في الجدول
   Future<void> _submitAllData() async {
     setState(() => _isUploading = true);
-    final supabase = Supabase.instance.client;
 
     try {
-      List<String> uploadedUrls = [];
-
-      // رفع الـ Business Plan لو تم اختياره
-      if (_businessPlanFile != null) {
-        String fileName = 'bp_${DateTime.now().millisecondsSinceEpoch}.pdf';
-        await supabase.storage.from('ideas_docs').upload('public/$fileName', _businessPlanFile!);
-        uploadedUrls.add(supabase.storage.from('ideas_docs').getPublicUrl('public/$fileName'));
-      }
-
-      // رفع الـ Feasibility Study لو تم اختياره
-      if (_feasibilityFile != null) {
-        String fileName = 'fs_${DateTime.now().millisecondsSinceEpoch}.pdf';
-        await supabase.storage.from('ideas_docs').upload('public/$fileName', _feasibilityFile!);
-        uploadedUrls.add(supabase.storage.from('ideas_docs').getPublicUrl('public/$fileName'));
-      }
-
-      // إدخال كل البيانات في جدول ideas
-      await supabase.from('ideas').insert({
-        'title': _titleController.text,
-        'description': _pitchController.text,
-        'category': _category,
-        'entrepreneur_id': supabase.auth.currentUser!.id, // بيجيب آيدي المستخدم الحالي
-        'idea_docs': uploadedUrls, // مصفوفة اللينكات
-        'status': 'pending',
-      });
+      await _submitIdeaService.submitIdea(
+        title: _titleController.text.trim(),
+        description: _pitchController.text.trim(),
+        category: _category ?? 'Other',
+        businessPlanFile: _businessPlanFile,
+        feasibilityFile: _feasibilityFile,
+      );
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Your idea has been submitted successfully!')),
-        );
+        CustomSnackBar.showSuccess(context, 'Your idea has been submitted successfully!');
         Navigator.pop(context); // Back to home after success
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('An error occurred: $e')),
-        );
+        CustomSnackBar.showError(context, 'An error occurred: $e');
       }
     } finally {
       if (mounted) setState(() => _isUploading = false);

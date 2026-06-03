@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:investra/core/styles/colors.dart';
-import 'package:investra/feature/auth/presentation/login_screen.dart';
-import 'package:investra/feature/main_app/mainAppEnterpreneur.dart';
+import 'package:investra/features/auth/presentation/pages/login_screen.dart';
+import 'package:investra/features/main_app/presentation/pages/main_app_entrepreneur_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'feature/splash/screen/splash_screen.dart';
+import 'package:investra/features/splash/presentation/pages/splash_screen.dart';
 
 Future<void> main() async {
-
   WidgetsFlutterBinding.ensureInitialized();
 
   // supabase with investra
@@ -14,7 +13,6 @@ Future<void> main() async {
     url: 'https://eruuwckhnkisegwirxzj.supabase.co',
     anonKey: 'sb_publishable_M8lhYOIXog8c-bf0p8gCDQ_B-APa-Ih',
   );
-  print("تم الاتصال بنجاح بـ Investra!");
 
   runApp(const InvestraApp());
 }
