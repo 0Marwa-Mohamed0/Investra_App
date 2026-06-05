@@ -1,7 +1,3 @@
-// ═══════════════════════════════════════════════════════════════════════════
-// 📁 المسار: lib/features/messages/presentation/pages/messages_list_screen.dart
-// ═══════════════════════════════════════════════════════════════════════════
-
 import 'dart:async';
 
 import 'package:flutter/material.dart';
