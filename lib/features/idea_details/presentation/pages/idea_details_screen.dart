@@ -1,3 +1,8 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// 📁 المسار: lib/features/idea_details/presentation/pages/idea_details_screen.dart
+// ℹ️  استبدل الملف القديم بهذا الملف بالكامل
+// ═══════════════════════════════════════════════════════════════════════════
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:investra/core/styles/colors.dart';
@@ -31,7 +36,6 @@ class _IdeaDetailsScreenState extends State<IdeaDetailsScreen> {
     try {
       final supabase = Supabase.instance.client;
       final userId = supabase.auth.currentUser?.id;
-
       if (userId != null) {
         await supabase.from('idea_views').insert({
           'idea_id': widget.idea['id'],
@@ -54,13 +58,17 @@ class _IdeaDetailsScreenState extends State<IdeaDetailsScreen> {
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(backgroundColor: AppColors.green1Color, content: Text('Request sent!')),
+          const SnackBar(
+              backgroundColor: AppColors.green1Color,
+              content: Text('Request sent!')),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(backgroundColor: AppColors.errorColor, content: Text('Request failed.')),
+          const SnackBar(
+              backgroundColor: AppColors.errorColor,
+              content: Text('Request failed.')),
         );
       }
     } finally {
@@ -68,13 +76,29 @@ class _IdeaDetailsScreenState extends State<IdeaDetailsScreen> {
     }
   }
 
+  // ✅ تحديد نوع الوثيقة من الـ URL
+  String _docLabel(String url, int index) {
+    if (url.contains('bp_')) return 'Business Plan';
+    if (url.contains('fs_')) return 'Feasibility Study';
+    if (url.contains('/contracts/') || url.contains('contract_')) {
+      return 'Contract';
+    }
+    return 'Document ${index + 1}';
+  }
+
+  // ✅ الـ contract لا يُفتح — فقط يُعرض اسمه
+  bool _isContract(String url) =>
+      url.contains('/contracts/') || url.contains('contract_');
+
   @override
   Widget build(BuildContext context) {
     final String category = widget.idea['category'] ?? 'General';
     final List<dynamic> docs = widget.idea['idea_docs'] ?? [];
-    final String description = widget.idea['description'] ?? 'No description provided.';
+    final String description =
+        widget.idea['description'] ?? 'No description provided.';
     final String date = widget.idea['created_at'] != null
-        ? DateFormat.yMMMd().format(DateTime.parse(widget.idea['created_at']))
+        ? DateFormat.yMMMd()
+        .format(DateTime.parse(widget.idea['created_at']))
         : 'Recently';
 
     return Scaffold(
@@ -85,16 +109,17 @@ class _IdeaDetailsScreenState extends State<IdeaDetailsScreen> {
         scrolledUnderElevation: 0,
         toolbarHeight: 50,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, color: AppColors.primaryColor, size: 18),
+          icon: const Icon(Icons.arrow_back_ios_new,
+              color: AppColors.primaryColor, size: 18),
           onPressed: () => Navigator.pop(context),
         ),
         title: const Text(
           'IDEA DETAILS',
           style: TextStyle(
-              color: AppColors.primaryColor,
-              fontWeight: FontWeight.bold,
-              fontSize: 15,
-              letterSpacing: 1.1
+            color: AppColors.primaryColor,
+            fontWeight: FontWeight.bold,
+            fontSize: 15,
+            letterSpacing: 1.1,
           ),
         ),
         centerTitle: true,
@@ -107,13 +132,13 @@ class _IdeaDetailsScreenState extends State<IdeaDetailsScreen> {
               imagePath: _logic.getCategoryImage(category),
               category: category,
             ),
-
-
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+              padding:
+              const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // ── العنوان ─────────────────────────────────────────
                   Text(
                     widget.idea['title'] ?? '',
                     style: const TextStyle(
@@ -123,28 +148,30 @@ class _IdeaDetailsScreenState extends State<IdeaDetailsScreen> {
                       height: 1.25,
                     ),
                   ),
-
                   const SizedBox(height: 4),
 
+                  // ── اسم المؤسس ───────────────────────────────────────
                   FutureBuilder<String>(
-                    future: _logic.getEntrepreneurName(widget.idea['entrepreneur_id']?.toString() ?? ''),
+                    future: _logic.getEntrepreneurName(
+                        widget.idea['entrepreneur_id']?.toString() ?? ''),
                     builder: (context, snapshot) {
                       final entrepreneurName = snapshot.data ?? '...';
-
                       return GestureDetector(
                         onTap: () {
-                          final String? entrepreneurId = widget.idea['entrepreneur_id']?.toString();
+                          final String? entrepreneurId =
+                          widget.idea['entrepreneur_id']?.toString();
                           if (entrepreneurId != null) {
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (context) => ProfileScreen(userId: entrepreneurId),
+                                builder: (context) =>
+                                    ProfileScreen(userId: entrepreneurId),
                               ),
                             );
                           }
                         },
                         child: Text(
-                          "Posted $date by $entrepreneurName",
+                          'Posted $date by $entrepreneurName',
                           style: const TextStyle(
                             color: AppColors.grayColor,
                             fontSize: 12,
@@ -154,78 +181,125 @@ class _IdeaDetailsScreenState extends State<IdeaDetailsScreen> {
                       );
                     },
                   ),
-
                   const SizedBox(height: 10),
 
                   const AiInvestorRatingCard(),
-
                   const SizedBox(height: 14),
 
+                  // ── الوصف ────────────────────────────────────────────
                   const Text(
-                      "Project Description",
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.blackColor)
+                    'Project Description',
+                    style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.blackColor),
                   ),
                   const SizedBox(height: 5),
-
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         description,
                         maxLines: _isExpanded ? null : 4,
-                        overflow: _isExpanded ? TextOverflow.visible : TextOverflow.ellipsis,
+                        overflow: _isExpanded
+                            ? TextOverflow.visible
+                            : TextOverflow.ellipsis,
                         style: const TextStyle(
-                            fontSize: 13.5,
-                            height: 1.5,
-                            fontWeight: FontWeight.w400,
-                            color: AppColors.darkGray
+                          fontSize: 13.5,
+                          height: 1.5,
+                          fontWeight: FontWeight.w400,
+                          color: AppColors.darkGray,
                         ),
                       ),
                       GestureDetector(
-                        onTap: () => setState(() => _isExpanded = !_isExpanded),
+                        onTap: () =>
+                            setState(() => _isExpanded = !_isExpanded),
                         child: Padding(
                           padding: const EdgeInsets.only(top: 4.0),
                           child: Text(
-                            _isExpanded ? "Read Less" : "Read More",
-                            style: const TextStyle(color: AppColors.primaryColor, fontWeight: FontWeight.bold, fontSize: 12),
+                            _isExpanded ? 'Read Less' : 'Read More',
+                            style: const TextStyle(
+                                color: AppColors.primaryColor,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12),
                           ),
                         ),
                       ),
                     ],
                   ),
 
+                  // ── الوثائق ──────────────────────────────────────────
                   if (docs.isNotEmpty) ...[
                     const SizedBox(height: 14),
-                    const Text("Required Documents", style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.blackColor)),
+                    const Text(
+                      'Required Documents',
+                      style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.blackColor),
+                    ),
                     const SizedBox(height: 8),
-                    ...docs.map((docUrl) {
-                      bool isBP = docUrl.toString().contains('bp_');
+                    ...docs.asMap().entries.map((entry) {
+                      final int index = entry.key;
+                      final String url = entry.value.toString();
+                      final bool isContract = _isContract(url);
+                      final String label = _docLabel(url, index);
+
                       return Container(
                         margin: const EdgeInsets.only(bottom: 8),
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 10),
                         decoration: BoxDecoration(
-                          color: AppColors.secondary2Color,
+                          // ✅ الـ contract له خلفية مختلفة قليلاً
+                          color: isContract
+                              ? AppColors.primaryColor.withOpacity(0.06)
+                              : AppColors.secondary2Color,
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: AppColors.bgGray),
+                          border: Border.all(
+                            color: isContract
+                                ? AppColors.primaryColor.withOpacity(0.25)
+                                : AppColors.bgGray,
+                          ),
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.insert_drive_file, color: AppColors.primaryColor, size: 18),
+                            Icon(
+                              // ✅ أيقونة مختلفة للـ contract
+                              isContract
+                                  ? Icons.gavel_rounded
+                                  : Icons.insert_drive_file,
+                              color: AppColors.primaryColor,
+                              size: 18,
+                            ),
                             const SizedBox(width: 10),
                             Expanded(
                               child: Text(
-                                isBP ? "Business Plan" : "Feasibility Study",
-                                style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
+                                label,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w500,
+                                    fontSize: 13),
                               ),
                             ),
-                            const Icon(Icons.check_circle, color: AppColors.green1Color, size: 16),
+                            // ✅ الـ contract: أيقونة قفل بدل check
+                            // الوثائق العادية: check أخضر
+                            Icon(
+                              isContract
+                                  ? Icons.lock_outline
+                                  : Icons.check_circle,
+                              color: isContract
+                                  ? AppColors.grayColor
+                                  : AppColors.green1Color,
+                              size: 16,
+                            ),
                           ],
                         ),
                       );
-                    }).toList(),
+                    }),
                   ],
+
                   const SizedBox(height: 16),
-                  ActionButtonsSection(isLoading: _isLoading, onAction: _handleAction),
+                  ActionButtonsSection(
+                      isLoading: _isLoading, onAction: _handleAction),
                 ],
               ),
             ),

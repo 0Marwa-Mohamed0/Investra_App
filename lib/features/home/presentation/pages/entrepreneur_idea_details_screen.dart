@@ -1,3 +1,8 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// 📁 المسار: lib/features/home/presentation/pages/entrepreneur_idea_details_screen.dart
+// ℹ️  استبدل الملف القديم بهذا الملف بالكامل
+// ═══════════════════════════════════════════════════════════════════════════
+
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -10,7 +15,6 @@ import 'package:investra/features/notifications/presentation/pages/notifications
 import 'package:open_filex/open_filex.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// شاشة تفاصيل الفكرة للمؤسس (Entrepreneur).
 class EntrepreneurIdeaDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> ideaData;
 
@@ -42,6 +46,7 @@ class _EntrepreneurIdeaDetailsScreenState
   final Map<int, File> _replacedFiles = {};
   final Map<int, String> _replacedFileNames = {};
 
+  // ✅ قائمة العقود الجديدة (بتترفع في bucket 'contracts')
   final List<File> _newContractFiles = [];
   final List<String> _newContractFileNames = [];
 
@@ -94,12 +99,13 @@ class _EntrepreneurIdeaDetailsScreenState
 
   void _detectChanges() {
     final docsChanged = _docListsDiffer(_existingDocUrls, _originalDocUrls);
-    final changed = _titleController.text.trim() != _originalTitle.trim() ||
-        (_category ?? '') != _originalCategory ||
-        _pitchController.text.trim() != _originalDescription.trim() ||
-        _replacedFiles.isNotEmpty ||
-        _newContractFiles.isNotEmpty ||
-        docsChanged;
+    final changed =
+        _titleController.text.trim() != _originalTitle.trim() ||
+            (_category ?? '') != _originalCategory ||
+            _pitchController.text.trim() != _originalDescription.trim() ||
+            _replacedFiles.isNotEmpty ||
+            _newContractFiles.isNotEmpty ||
+            docsChanged;
 
     if (changed != _hasChanges) setState(() => _hasChanges = changed);
   }
@@ -115,11 +121,15 @@ class _EntrepreneurIdeaDetailsScreenState
   String _docLabel(String url, int index) {
     if (url.contains('bp_')) return 'Business Plan';
     if (url.contains('fs_')) return 'Feasibility Study';
-    if (url.contains('contract_')) return 'Contract';
+    // ✅ العقود اللي اترفعت في bucket contracts بتيجي URL فيه كلمة contracts
+    if (url.contains('contract_') || url.contains('/contracts/')) {
+      return 'Contract';
+    }
     return 'Document ${index + 1}';
   }
 
-  bool _isContractUrl(String url) => url.contains('contract_');
+  bool _isContractUrl(String url) =>
+      url.contains('contract_') || url.contains('/contracts/');
 
   void _reindexReplacementMaps(int removedIndex) {
     final newFiles = <int, File>{};
@@ -218,10 +228,8 @@ class _EntrepreneurIdeaDetailsScreenState
     return savePath;
   }
 
-  /// يفتح الملف محلياً عبر تطبيق النظام الافتراضي (PDF / Word …).
   Future<void> _openDocument({File? localFile, String? remoteUrl}) async {
     if (_isOpeningDoc) return;
-
     setState(() => _isOpeningDoc = true);
 
     try {
@@ -262,6 +270,7 @@ class _EntrepreneurIdeaDetailsScreenState
     try {
       List<String> updatedDocUrls = List.from(_existingDocUrls);
 
+      // 1) رفع الملفات البديلة في ideas_docs (نفس الـ bucket الأصلي)
       for (final entry in _replacedFiles.entries) {
         final index = entry.key;
         final file = entry.value;
@@ -283,21 +292,23 @@ class _EntrepreneurIdeaDetailsScreenState
         }
       }
 
+      // ✅ 2) رفع العقود الجديدة في bucket منفصل اسمه 'contracts'
       for (int i = 0; i < _newContractFiles.length; i++) {
         final fileName =
-            'contract_${DateTime.now().millisecondsSinceEpoch}_${_newContractFileNames[i]}';
+            '${DateTime.now().millisecondsSinceEpoch}_${_newContractFileNames[i]}';
 
         await _supabase.storage
-            .from('ideas_docs')
+            .from('contracts')
             .upload('public/$fileName', _newContractFiles[i]);
 
         final newUrl = _supabase.storage
-            .from('ideas_docs')
+            .from('contracts')
             .getPublicUrl('public/$fileName');
 
         updatedDocUrls.add(newUrl);
       }
 
+      // 3) تحديث جدول ideas
       await _supabase.from('ideas').update({
         'title': _titleController.text.trim(),
         'description': _pitchController.text.trim(),
@@ -340,7 +351,6 @@ class _EntrepreneurIdeaDetailsScreenState
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final textTheme = theme.textTheme;
-
     final hasAnyDocs =
         _existingDocUrls.isNotEmpty || _newContractFiles.isNotEmpty;
 
@@ -362,6 +372,8 @@ class _EntrepreneurIdeaDetailsScreenState
                   ),
                 ),
                 const SizedBox(height: 20),
+
+                // ── Idea Title ──────────────────────────────────────────
                 TextFormField(
                   controller: _titleController,
                   textInputAction: TextInputAction.next,
@@ -371,11 +383,13 @@ class _EntrepreneurIdeaDetailsScreenState
                   ),
                 ),
                 const SizedBox(height: 16),
+
+                // ── Category ───────────────────────────────────────────
                 InputDecorator(
                   decoration: const InputDecoration(
                     labelText: 'Category',
                     contentPadding:
-                        EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                   ),
                   child: DropdownButtonHideUnderline(
                     child: DropdownButton<String>(
@@ -395,7 +409,7 @@ class _EntrepreneurIdeaDetailsScreenState
                       borderRadius: BorderRadius.circular(8),
                       items: _categories
                           .map((c) => DropdownMenuItem<String>(
-                              value: c, child: Text(c)))
+                          value: c, child: Text(c)))
                           .toList(),
                       onChanged: (value) {
                         setState(() => _category = value);
@@ -405,6 +419,8 @@ class _EntrepreneurIdeaDetailsScreenState
                   ),
                 ),
                 const SizedBox(height: 16),
+
+                // ── Pitch Description ──────────────────────────────────
                 TextFormField(
                   controller: _pitchController,
                   minLines: 4,
@@ -416,6 +432,8 @@ class _EntrepreneurIdeaDetailsScreenState
                   ),
                 ),
                 const SizedBox(height: 28),
+
+                // ── Documents ──────────────────────────────────────────
                 if (hasAnyDocs) ...[
                   Text(
                     'Uploaded Documents',
@@ -425,6 +443,8 @@ class _EntrepreneurIdeaDetailsScreenState
                     ),
                   ),
                   const SizedBox(height: 12),
+
+                  // الوثائق الموجودة
                   ...List.generate(_existingDocUrls.length, (i) {
                     final url = _existingDocUrls[i];
                     final isReplaced = _replacedFiles.containsKey(i);
@@ -444,10 +464,11 @@ class _EntrepreneurIdeaDetailsScreenState
                         }
                       },
                       onReplace: () => _pickReplacementFile(i),
-                      onDelete:
-                          isContract ? () => _deleteExistingDoc(i) : null,
+                      onDelete: isContract ? () => _deleteExistingDoc(i) : null,
                     );
                   }),
+
+                  // العقود الجديدة (لسه مترفعتش)
                   ...List.generate(_newContractFiles.length, (i) {
                     return _DocumentRow(
                       label: _newContractFileNames[i],
@@ -458,10 +479,15 @@ class _EntrepreneurIdeaDetailsScreenState
                       onDelete: () => _removeNewContract(i),
                     );
                   }),
+
                   const SizedBox(height: 8),
                 ],
+
+                // ── Add Contract Button ────────────────────────────────
                 _AddContractButton(onPressed: _addContractFile),
                 const SizedBox(height: 32),
+
+                // ── Submit Changes Button ──────────────────────────────
                 _SubmitChangesButton(
                   enabled: _hasChanges && !_isSaving,
                   isLoading: _isSaving,
@@ -471,6 +497,8 @@ class _EntrepreneurIdeaDetailsScreenState
               ],
             ),
           ),
+
+          // Loading overlay أثناء فتح الملف
           if (_isOpeningDoc)
             const ColoredBox(
               color: Color(0x33000000),
@@ -510,7 +538,10 @@ class _EntrepreneurIdeaDetailsScreenState
   }
 }
 
-/// صف وثيقة — الضغط على الصف بالكامل يفتح الملف؛ أيقونة الاستبدال على اليمين.
+// ════════════════════════════════════════════════════════════════════════════
+// WIDGETS
+// ════════════════════════════════════════════════════════════════════════════
+
 class _DocumentRow extends StatelessWidget {
   final String label;
   final bool isReplaced;
@@ -544,18 +575,19 @@ class _DocumentRow extends StatelessWidget {
             color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 4,
             offset: const Offset(0, 2),
-          )
+          ),
         ],
       ),
       clipBehavior: Clip.antiAlias,
       child: Row(
         children: [
-          // الضغط على هذا الجزء (الاسم والأيقونة) يفتح الملف
+          // الضغط على هذا الجزء يفتح الملف
           Expanded(
             child: InkWell(
               onTap: onOpen,
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+                padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
                 child: Row(
                   children: [
                     Icon(
@@ -585,7 +617,7 @@ class _DocumentRow extends StatelessWidget {
               ),
             ),
           ),
-          // جزء الأيقونات على اليمين (تعديل/حذف)
+          // أيقونات اليمين (حذف + استبدال)
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: Row(
@@ -605,7 +637,7 @@ class _DocumentRow extends StatelessWidget {
                   icon: Icons.sync,
                   color: AppColors.grayColor,
                   tooltip: 'Replace file',
-                  size: 28, // أيقونة الاستبدال أصبحت أكبر
+                  size: 28,
                   onTap: onReplace,
                 ),
               ],
@@ -654,7 +686,6 @@ class _DocIconButton extends StatelessWidget {
 
 class _AddContractButton extends StatelessWidget {
   final VoidCallback onPressed;
-
   const _AddContractButton({required this.onPressed});
 
   @override
@@ -708,19 +739,19 @@ class _SubmitChangesButton extends StatelessWidget {
         onPressed: enabled ? onPressed : null,
         icon: isLoading
             ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.white,
-                ),
-              )
+          width: 18,
+          height: 18,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: Colors.white,
+          ),
+        )
             : CustomSvgPicture(
-                path: AppImages.editSvg,
-                color: enabled ? theme.colorScheme.onPrimary : disabledColor,
-                width: 20,
-                height: 20,
-              ),
+          path: AppImages.editSvg,
+          color: enabled ? theme.colorScheme.onPrimary : disabledColor,
+          width: 20,
+          height: 20,
+        ),
         label: Text(
           isLoading ? 'Saving...' : 'Submit Changes',
           style: theme.textTheme.titleMedium?.copyWith(
@@ -732,7 +763,7 @@ class _SubmitChangesButton extends StatelessWidget {
           elevation: 0,
           padding: const EdgeInsets.symmetric(vertical: 16),
           backgroundColor:
-              enabled ? AppColors.primaryColor : AppColors.bgGray,
+          enabled ? AppColors.primaryColor : AppColors.bgGray,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
