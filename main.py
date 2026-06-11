@@ -290,6 +290,38 @@ async def chat(
     }
 
 # ============================================================
+# /generate-title — توليد عنوان ذكي لجلسة موجودة بناءً على أول تبادل
+# ============================================================
+@app.post("/generate-title")
+async def generate_title_endpoint(session_id: str = Form(...)):
+    session_id = clean_uuid(session_id)
+    if not session_id:
+        return {"error": "session_id is required"}
+
+    messages_data = supabase.table("AI_Messages") \
+        .select("sender_role, content") \
+        .eq("session_id", session_id) \
+        .order("created_at", desc=False) \
+        .limit(5) \
+        .execute()
+
+    msgs = messages_data.data or []
+
+    user_msg = next((m["content"] for m in msgs if m["sender_role"] == "user"), None)
+    ai_msg = next((m["content"] for m in msgs if m["sender_role"] == "assistant"), "")
+
+    if not user_msg:
+        return {"error": "No user message yet, cannot generate title"}
+
+    new_title = generate_smart_title(user_msg, ai_msg)
+
+    supabase.table("AI_Sessions").update({
+        "title": new_title
+    }).eq("session_id", session_id).execute()
+
+    return {"session_id": session_id, "title": new_title}
+
+# ============================================================
 # /rate-ideas
 # ============================================================
 def get_ideas():
