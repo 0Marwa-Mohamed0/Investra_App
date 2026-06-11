@@ -1,5 +1,6 @@
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pptx import Presentation
 from openai import OpenAI
 from supabase import create_client
@@ -232,7 +233,9 @@ async def chat(
 
     try:
         chat_history = json.loads(history) if history and history.strip() not in ["", "[]"] else []
-    except:
+        if not isinstance(chat_history, list):
+            chat_history = []
+    except Exception:
         chat_history = []
 
     messages = [
@@ -245,44 +248,73 @@ async def chat(
     ]
 
     for msg in chat_history[-10:]:
-        messages.append(msg)
+        if isinstance(msg, dict) and "role" in msg and "content" in msg:
+            messages.append({"role": msg["role"], "content": msg["content"]})
 
     messages.append({"role": "user", "content": message})
 
-    response = client.chat.completions.create(
-        model=MODEL_NAME,
-        messages=messages,
-        max_tokens=1000,
-    )
+    # 1) Call the AI model
+    try:
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=messages,
+            max_tokens=1000,
+        )
+        ai_response = response.choices[0].message.content
+    except Exception as e:
+        print(f"[CHAT] OpenRouter error: {repr(e)}")
+        return JSONResponse(
+            status_code=502,
+            content={"error": "AI model request failed", "detail": str(e)}
+        )
 
-    ai_response = response.choices[0].message.content
     current_time = datetime.now(timezone.utc).isoformat()
 
-    # 1. تحديث الـ Session
+    # 2) إنشاء/تحديث الـ Session
     if not session_id:
-        # هنا يتم توليد العنوان الذكي عند بداية المحادثة
-        smart_title = generate_smart_title(message, ai_response)
-        session_data = supabase.table("AI_Sessions").insert({
-            "session_id": str(uuid.uuid4()),
-            "user_id": user_id,
-            "title": smart_title, 
-            "last_message_snippet": ai_response[:100],
-        }).execute()
-        session_id = session_data.data[0]["session_id"]
+        try:
+            # هنا يتم توليد العنوان الذكي عند بداية المحادثة
+            smart_title = generate_smart_title(message, ai_response)
+            session_data = supabase.table("AI_Sessions").insert({
+                "session_id": str(uuid.uuid4()),
+                "user_id": user_id,
+                "title": smart_title,
+                "last_message_snippet": ai_response[:100],
+            }).execute()
+            session_id = session_data.data[0]["session_id"]
+        except Exception as e:
+            print(f"[CHAT] AI_Sessions insert error: {repr(e)}")
+            return JSONResponse(
+                status_code=500,
+                content={"error": "Could not create session", "detail": str(e)}
+            )
     else:
-        supabase.table("AI_Sessions").update({
-            "last_message_snippet": ai_response[:100],
-            "updated_at": current_time
-        }).eq("session_id", session_id).execute()
+        try:
+            supabase.table("AI_Sessions").update({
+                "last_message_snippet": ai_response[:100],
+                "updated_at": current_time
+            }).eq("session_id", session_id).execute()
+        except Exception as e:
+            # Non-fatal: even if updating the session metadata fails
+            # (e.g. missing column), we still want to save & return the
+            # AI reply so the chat keeps working.
+            print(f"[CHAT] AI_Sessions update warning (non-fatal): {repr(e)}")
 
-    # 2. حفظ رد الـ AI فقط في AI_Messages
-    supabase.table("AI_Messages").insert({
-        "message_id": str(uuid.uuid4()),
-        "session_id": session_id,
-        "sender_role": "assistant",
-        "content": ai_response,
-        "created_at": current_time
-    }).execute()
+    # 3. حفظ رد الـ AI فقط في AI_Messages
+    try:
+        supabase.table("AI_Messages").insert({
+            "message_id": str(uuid.uuid4()),
+            "session_id": session_id,
+            "sender_role": "assistant",
+            "content": ai_response,
+            "created_at": current_time
+        }).execute()
+    except Exception as e:
+        print(f"[CHAT] AI_Messages insert error: {repr(e)}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Could not save AI reply", "detail": str(e)}
+        )
 
     return {
         "response": ai_response,
@@ -298,28 +330,35 @@ async def generate_title_endpoint(session_id: str = Form(...)):
     if not session_id:
         return {"error": "session_id is required"}
 
-    messages_data = supabase.table("AI_Messages") \
-        .select("sender_role, content") \
-        .eq("session_id", session_id) \
-        .order("created_at", desc=False) \
-        .limit(5) \
-        .execute()
+    try:
+        messages_data = supabase.table("AI_Messages") \
+            .select("sender_role, content") \
+            .eq("session_id", session_id) \
+            .order("created_at", desc=False) \
+            .limit(5) \
+            .execute()
 
-    msgs = messages_data.data or []
+        msgs = messages_data.data or []
 
-    user_msg = next((m["content"] for m in msgs if m["sender_role"] == "user"), None)
-    ai_msg = next((m["content"] for m in msgs if m["sender_role"] == "assistant"), "")
+        user_msg = next((m["content"] for m in msgs if m["sender_role"] == "user"), None)
+        ai_msg = next((m["content"] for m in msgs if m["sender_role"] == "assistant"), "")
 
-    if not user_msg:
-        return {"error": "No user message yet, cannot generate title"}
+        if not user_msg:
+            return {"error": "No user message yet, cannot generate title"}
 
-    new_title = generate_smart_title(user_msg, ai_msg)
+        new_title = generate_smart_title(user_msg, ai_msg)
 
-    supabase.table("AI_Sessions").update({
-        "title": new_title
-    }).eq("session_id", session_id).execute()
+        supabase.table("AI_Sessions").update({
+            "title": new_title
+        }).eq("session_id", session_id).execute()
 
-    return {"session_id": session_id, "title": new_title}
+        return {"session_id": session_id, "title": new_title}
+    except Exception as e:
+        print(f"[GENERATE-TITLE] error: {repr(e)}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Could not generate title", "detail": str(e)}
+        )
 
 # ============================================================
 # /rate-ideas
