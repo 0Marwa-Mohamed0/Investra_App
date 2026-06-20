@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/svg.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:investra/core/constants/app_images.dart';
 import 'package:investra/core/styles/colors.dart';
 import 'package:investra/features/home/presentation/widgets/build_filters.dart';
@@ -45,18 +45,33 @@ class _InvestorHomeScreenState extends State<InvestorHomeScreen> {
             stream: supabase.from('notifications').stream(primaryKey: ['id']),
             builder: (context, snapshot) {
               final unread = snapshot.data?.where((n) =>
-              n['user_id'] == userId && n['is_read'] == false
-              ).toList() ?? [];
+              n['user_id'] == userId && n['is_read'] == false)
+                  .toList() ??
+                  [];
               bool hasUnread = unread.isNotEmpty;
 
               return Stack(
                 children: [
                   IconButton(
-                    onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const NotificationsScreen())),
-                    icon: SvgPicture.asset(AppImages.notificationSvg, colorFilter: const ColorFilter.mode(AppColors.primaryColor, BlendMode.srcIn)),
+                    onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (context) =>
+                            const NotificationsScreen())),
+                    icon: SvgPicture.asset(AppImages.notificationSvg,
+                        colorFilter: const ColorFilter.mode(
+                            AppColors.primaryColor, BlendMode.srcIn)),
                   ),
                   if (hasUnread)
-                    Positioned(right: 12, top: 12, child: Container(width: 9, height: 9, decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle))),
+                    Positioned(
+                        right: 12,
+                        top: 12,
+                        child: Container(
+                            width: 9,
+                            height: 9,
+                            decoration: const BoxDecoration(
+                                color: Colors.red,
+                                shape: BoxShape.circle))),
                 ],
               );
             },
@@ -69,34 +84,63 @@ class _InvestorHomeScreenState extends State<InvestorHomeScreen> {
           controller: widget.scrollController,
           physics: const BouncingScrollPhysics(),
           child: Padding(
-            padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.05, vertical: 12),
+            padding: EdgeInsets.symmetric(
+                horizontal: screenWidth * 0.05, vertical: 12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 BuildFilters(
                   selectedCategory: _categoryFilter,
                   selectedRating: _ratingFilter,
-                  onCategoryChanged: (val) => setState(() => _categoryFilter = val),
-                  onRatingChanged: (val) => setState(() => _ratingFilter = val),
+                  onCategoryChanged: (val) =>
+                      setState(() => _categoryFilter = val),
+                  onRatingChanged: (val) =>
+                      setState(() => _ratingFilter = val),
                 ),
                 const SizedBox(height: 22),
                 const Text(
                   'Investment Opportunities',
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: AppColors.primaryColor),
+                  style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.primaryColor),
                 ),
                 const SizedBox(height: 18),
                 StreamBuilder<List<Map<String, dynamic>>>(
-                  stream: supabase.from('ideas').stream(primaryKey: ['id']).order('created_at'),
+                  stream: supabase
+                      .from('ideas')
+                      .stream(primaryKey: ['id']).order('created_at'),
                   builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+                    if (snapshot.connectionState == ConnectionState.waiting)
+                      return const Center(
+                          child: CircularProgressIndicator());
 
                     var ideas = snapshot.data ?? [];
 
+                    // ✅ فلتر الـ category
                     if (_categoryFilter != 'All') {
-                      ideas = ideas.where((i) => (i['category']?.toString().toLowerCase() ?? '') == _categoryFilter.toLowerCase()).toList();
+                      ideas = ideas
+                          .where((i) =>
+                      (i['category']?.toString().toLowerCase() ??
+                          '') ==
+                          _categoryFilter.toLowerCase())
+                          .toList();
                     }
 
-                    if (ideas.isEmpty) return const Center(child: Padding(padding: EdgeInsets.only(top: 40), child: Text("No ideas found.")));
+                    // ✅ التعديل: فلتر الـ rating مطبق هلق
+                    if (_ratingFilter > 0) {
+                      ideas = ideas
+                          .where((i) =>
+                      (i['ai_rating'] ?? 0).toDouble() >=
+                          _ratingFilter)
+                          .toList();
+                    }
+
+                    if (ideas.isEmpty)
+                      return const Center(
+                          child: Padding(
+                              padding: EdgeInsets.only(top: 40),
+                              child: Text("No ideas found.")));
 
                     return ListView.builder(
                       shrinkWrap: true,
@@ -107,16 +151,18 @@ class _InvestorHomeScreenState extends State<InvestorHomeScreen> {
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 16),
                           child: BuildPostcard(
-                            category: (idea['category'] ?? 'General').toString().toUpperCase(),
+                            category: (idea['category'] ?? 'General')
+                                .toString()
+                                .toUpperCase(),
                             title: idea['title'] ?? 'No Title',
                             description: idea['description'] ?? '',
                             rating: (idea['ai_rating'] ?? 0).toDouble(),
                             onTap: () {
-                              // الانتقال لصفحة التفاصيل وتمرير البيانات
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (context) => IdeaDetailsScreen(idea: idea),
+                                  builder: (context) =>
+                                      IdeaDetailsScreen(idea: idea),
                                 ),
                               );
                             },

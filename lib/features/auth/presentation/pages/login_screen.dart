@@ -6,6 +6,7 @@ import 'package:investra/core/styles/colors.dart';
 import 'register_screen.dart';
 import 'forgot_password_screen.dart';
 import 'role_selection_screen.dart';
+import 'package:investra/features/onboarding/presentation/pages/onboarding_screen.dart';
 import '../widgets/auth_text_field.dart';
 import '../widgets/social_auth_button.dart';
 import 'package:investra/features/main_app/presentation/pages/main_app_entrepreneur_screen.dart';
@@ -29,7 +30,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
-    // مراقبة الدخول الذكي للـ OAuth (جوجل ولينكد إن)
+    // مراقبة الدخول الذكي للـ OAuth (جوجل)
     _authSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((data) async {
       final session = data.session;
       if (session != null && data.event == AuthChangeEvent.signedIn) {
@@ -120,7 +121,15 @@ class _LoginScreenState extends State<LoginScreen> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        leading: const BackButton(color: AppColors.blackColor),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: AppColors.blackColor),
+          onPressed: () {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => const OnboardingScreen()),
+            );
+          },
+        ),
         title: const Text(
           "Investra",
           style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppColors.primaryColor),
@@ -197,12 +206,10 @@ class _LoginScreenState extends State<LoginScreen> {
                 ],
               ),
               const Gap(24),
-              Row(
-                children: [
-                  Expanded(child: SocialAuthButton(label: "Google", iconPath: 'assets/icons/google_svg.svg', onPressed: () => _authService.signInWithOAuth(OAuthProvider.google))),
-                  const Gap(16),
-                  Expanded(child: SocialAuthButton(label: "LinkedIn", iconPath: 'assets/icons/Linkedin.svg', onPressed: () => _authService.signInWithOAuth(OAuthProvider.linkedin))),
-                ],
+              SocialAuthButton(
+                label: "Continue with Google",
+                iconPath: 'assets/icons/google_svg.svg',
+                onPressed: () => _authService.signInWithOAuth(OAuthProvider.google),
               ),
               const Gap(40),
               Row(

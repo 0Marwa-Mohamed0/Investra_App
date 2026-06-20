@@ -5,6 +5,7 @@ import 'package:investra/core/styles/colors.dart';
 import '../../data/services/auth_service.dart';
 import 'login_screen.dart';
 import 'role_selection_screen.dart';
+import 'package:investra/features/onboarding/presentation/pages/onboarding_screen.dart';
 import '../widgets/auth_text_field.dart';
 import '../widgets/social_auth_button.dart';
 import '../widgets/account_type_toggle.dart';
@@ -136,7 +137,15 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        leading: const BackButton(color: AppColors.blackColor),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: AppColors.blackColor),
+          onPressed: () {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => const OnboardingScreen()),
+            );
+          },
+        ),
         title: const Text("Create Account", style: TextStyle(color: AppColors.primaryColor, fontWeight: FontWeight.bold, fontSize: 18)),
         centerTitle: true,
       ),
@@ -240,13 +249,11 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
           Expanded(child: Divider(color: AppColors.bgGray)),
         ],
       ),
-      const Gap(12),
-      Row(
-        children: [
-          Expanded(child: SocialAuthButton(label: "Google", iconPath: 'assets/icons/google_svg.svg', onPressed: () => _authService.signInWithOAuth(OAuthProvider.google))),
-          const Gap(16),
-          Expanded(child: SocialAuthButton(label: "LinkedIn", iconPath: 'assets/icons/Linkedin.svg', onPressed: () => _authService.signInWithOAuth(OAuthProvider.linkedin))),
-        ],
+      const Gap(15),
+      SocialAuthButton(
+        label: "Continue with Google",
+        iconPath: 'assets/icons/google_svg.svg',
+        onPressed: () => _authService.signInWithOAuth(OAuthProvider.google),
       ),
     ],
   );

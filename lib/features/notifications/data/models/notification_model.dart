@@ -8,7 +8,6 @@ class NotificationModel {
   final DateTime createdAt;
   final String? ideaId;
   final String? requestId;
-  final String status;
 
   NotificationModel({
     required this.id,
@@ -20,7 +19,7 @@ class NotificationModel {
     required this.createdAt,
     this.ideaId,
     this.requestId,
-    required this.status,
+
   });
 
   factory NotificationModel.fromJson(Map<String, dynamic> json) {
@@ -36,7 +35,7 @@ class NotificationModel {
           : DateTime.now(),
       ideaId: json['idea_id'],
       requestId: json['request_id'],
-      status: json['status'] ?? 'pending',
+     // status: json['status'] ?? 'pending',
     );
   }
 }

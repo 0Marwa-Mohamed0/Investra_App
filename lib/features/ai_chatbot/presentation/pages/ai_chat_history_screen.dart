@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:dio/dio.dart';
 import 'package:investra/core/styles/colors.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:investra/features/ai_chatbot/data/models/ai_chat_model.dart';
+import 'ai_chatbot_screen.dart' show kAiBackendBaseUrl;
 
 class AiChatHistoryScreen extends StatefulWidget {
   const AiChatHistoryScreen({super.key});
@@ -14,6 +16,7 @@ class AiChatHistoryScreen extends StatefulWidget {
 
 class _AiChatHistoryScreenState extends State<AiChatHistoryScreen> {
   final _supabase = Supabase.instance.client;
+  final _dio = Dio();
 
   List<AiSession> _allSessions = [];
   List<AiSession> _filteredSessions = [];
@@ -44,17 +47,62 @@ class _AiChatHistoryScreenState extends State<AiChatHistoryScreen> {
           .eq('user_id', user.id)
           .order('created_at', ascending: false);
 
+      final sessions =
+      (data as List).map((json) => AiSession.fromJson(json)).toList();
+
       if (mounted) {
         setState(() {
-          _allSessions = (data as List).map((json) => AiSession.fromJson(json)).toList();
+          _allSessions = sessions;
           _filteredSessions = _allSessions;
           _isLoading = false;
         });
       }
+
+      // After showing the list, lazily generate smart titles for any
+      // sessions that still have the default "Chat <date/time>" title
+      // and already have at least one AI reply to base a title on.
+      _generateMissingTitles(sessions);
     } catch (e) {
       debugPrint("History Error: $e");
       if (mounted) {
         setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _generateMissingTitles(List<AiSession> sessions) async {
+    for (final session in sessions) {
+      final hasDefaultTitle = session.title.startsWith('Chat ');
+      final hasReply = session.lastMessageSnippet != null &&
+          session.lastMessageSnippet!.trim().isNotEmpty;
+
+      if (!hasDefaultTitle || !hasReply) continue;
+
+      try {
+        final response = await _dio.post(
+          '$kAiBackendBaseUrl/generate-title',
+          data: FormData.fromMap({'session_id': session.sessionId}),
+        );
+
+        final newTitle = response.data is Map ? response.data['title'] : null;
+        if (newTitle == null || newTitle is! String || !mounted) continue;
+
+        setState(() {
+          _allSessions = _allSessions
+              .map((s) => s.sessionId == session.sessionId
+              ? AiSession(
+            sessionId: s.sessionId,
+            userId: s.userId,
+            title: newTitle,
+            lastMessageSnippet: s.lastMessageSnippet,
+            createdAt: s.createdAt,
+          )
+              : s)
+              .toList();
+          _filterChats();
+        });
+      } catch (e) {
+        debugPrint("Title gen error for ${session.sessionId}: $e");
       }
     }
   }

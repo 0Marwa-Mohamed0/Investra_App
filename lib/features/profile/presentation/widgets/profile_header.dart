@@ -11,7 +11,7 @@ class ProfileHeader extends StatelessWidget {
     return Column(
       children: [
         const SizedBox(height: 25),
-        // دائرة الصورة الشخصية مع إطار خفيف احترافي
+
         Container(
           decoration: BoxDecoration(
             shape: BoxShape.circle,
@@ -22,18 +22,18 @@ class ProfileHeader extends StatelessWidget {
             backgroundColor: AppColors.secondary1Color,
             backgroundImage: profile.profilePicture != null && profile.profilePicture!.isNotEmpty
                 ? NetworkImage(profile.profilePicture!)
-                : const AssetImage('assets/images/default_pfp.png') as ImageProvider,
+                : const AssetImage('') as ImageProvider,
           ),
         ),
         const SizedBox(height: 12),
-        // الاسم بخط عريض وواضح
+
         Text(
           profile.fullName,
           style: const TextStyle(
             fontSize: 24,
             fontWeight: FontWeight.bold,
             color: AppColors.blackColor,
-            fontFamily: 'CabinetGrotesk', // أو خط مشروعك الأساسي
+            fontFamily: 'CabinetGrotesk',
           ),
         ),
         const SizedBox(height: 4),
@@ -48,7 +48,6 @@ class ProfileHeader extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        // البايو الحقيقي بداخل مسافات مريحة للعين
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 32.0),
           child: Text(

@@ -3,7 +3,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class AuthService {
   final SupabaseClient _supabase = Supabase.instance.client;
 
-  // تسجيل الدخول العادي بالبريد وكلمة السر
   Future<AuthResponse> login(String email, String password) async {
     return await _supabase.auth.signInWithPassword(
       email: email,
@@ -11,7 +10,6 @@ class AuthService {
     );
   }
 
-  // تحديث الجلسة وجلب الـ Role إن وجد
   Future<String> updateUserSessionAndGetRole(String userId) async {
     await _supabase
         .from('User')
@@ -36,7 +34,6 @@ class AuthService {
     return data['role'] ?? 'Unknown';
   }
 
-  // فحص هل المستخدم له سجل في جدول User أم أنه مستخدم جوجل جديد
   Future<Map<String, dynamic>?> checkUserRecord(String userId) async {
     return await _supabase
         .from('User')
@@ -45,7 +42,6 @@ class AuthService {
         .maybeSingle();
   }
 
-  // إنشاء أو تحديث سجل للمستخدم الجديد القادم من جوجل (تعديل للـ upsert)
   Future<void> createUserRecord({
     required String userId,
     required String email,
@@ -61,7 +57,6 @@ class AuthService {
     });
   }
 
-  // التسجيل العادي
   Future<AuthResponse> signUp({
     required String email,
     required String password,

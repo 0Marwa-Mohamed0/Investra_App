@@ -70,26 +70,102 @@ class _InvestorViewBodyState extends State<InvestorViewBody> with SingleTickerPr
           ],
         ),
 
-        // 3. الـ TabBarView لعرض المحتوى أو الـ Empty State داخل كل Tab
         Container(
           height: 250, // مساحة مريحة للـ Empty State والـ Scrolling لاحقاً
           padding: const EdgeInsets.all(16),
           child: TabBarView(
             controller: _tabController,
             children: [
-              // الـ Tab الأول: Investments (بيعرض حالياً الـ Empty State بشكل منظم)
-              const Center(
-                child: Text(
-                  'No active investments to show.',
-                  style: TextStyle(
-                    color: AppColors.grayColor,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
+
+              FutureBuilder<List<Map<String, dynamic>>>(
+                future: _logic.getInvestorInvestments(widget.profile.userId),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(
+                      child: CircularProgressIndicator(color: AppColors.primaryColor),
+                    );
+                  }
+
+                  final investments = snapshot.data ?? [];
+                  if (investments.isEmpty) {
+                    return const Center(
+                      child: Text(
+                        'No active investments to show.',
+                        style: TextStyle(
+                          color: AppColors.grayColor,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    );
+                  }
+
+                  return ListView.builder(
+                    itemCount: investments.length,
+                    itemBuilder: (context, index) {
+                      final inv = investments[index];
+                      final bool isFunded = inv['status'] == 'funded';
+
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.bgColor,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppColors.bgGray),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.trending_up, color: AppColors.primaryColor),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    inv['title'] ?? 'Untitled',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: AppColors.blackColor,
+                                    ),
+                                  ),
+                                  Text(
+                                    inv['description'] ?? '',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: AppColors.grayColor,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: isFunded
+                                    ? AppColors.green1Color.withOpacity(0.15)
+                                    : AppColors.secondary1Color,
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(
+                                isFunded ? 'Funded' : 'Pending',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: isFunded ? AppColors.green1Color : AppColors.grayColor,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  );
+                },
               ),
 
-              // الـ Tab الثاني: Investor Details
               const Center(
                 child: Text(
                   'No details provided yet.',

@@ -2,12 +2,40 @@ import 'package:flutter/material.dart';
 import 'package:investra/core/styles/colors.dart';
 
 class AiInvestorRatingCard extends StatelessWidget {
-   final String ratingPercentage;
+  final double rating;
 
   const AiInvestorRatingCard({
     super.key,
-    this.ratingPercentage = "92%",
+    this.rating = 0,
   });
+
+  String _getPotentialLabel(double r) {
+    if (r >= 4) return "High Potential";
+    if (r >= 2.5) return "Medium Potential";
+    return "Low Potential";
+  }
+
+  Color _getPotentialColor(double r) {
+    if (r >= 4) return AppColors.darkgreen;
+    if (r >= 2.5) return Colors.orange;
+    return Colors.red;
+  }
+
+  Widget _buildStars() {
+    return Row(
+      children: List.generate(5, (i) {
+        IconData icon;
+        if (rating >= i + 1) {
+          icon = Icons.star;
+        } else if (rating >= i + 0.5) {
+          icon = Icons.star_half;
+        } else {
+          icon = Icons.star_border;
+        }
+        return Icon(icon, color: Colors.amber, size: 18);
+      }),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -22,39 +50,52 @@ class AiInvestorRatingCard extends StatelessWidget {
         children: [
           const Icon(Icons.psychology, color: AppColors.darkgreen, size: 24),
           const SizedBox(width: 12),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  "AI Feasibility Rate",
+                const Text(
+                  "AI INVESTOR RATING",
                   style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.darkgreen,
-                  ),
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.darkgreen),
                 ),
-                SizedBox(height: 2),
-                Text(
-                  "Based on project criteria and markets",
-                  style: TextStyle(fontSize: 11, color: AppColors.grayColor),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    _buildStars(),
+                    const SizedBox(width: 6),
+                    Text(
+                      rating.toStringAsFixed(1),
+                      style: const TextStyle(
+                          fontSize: 12, color: AppColors.grayColor),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            padding:
+            const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              color: AppColors.darkgreen,
+              color: _getPotentialColor(rating),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Text(
-              ratingPercentage,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 14,
-              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.trending_up, color: Colors.white, size: 14),
+                const SizedBox(width: 4),
+                Text(
+                  _getPotentialLabel(rating),
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 11),
+                ),
+              ],
             ),
           ),
         ],

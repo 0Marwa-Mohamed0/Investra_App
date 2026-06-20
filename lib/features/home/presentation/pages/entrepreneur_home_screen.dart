@@ -11,8 +11,6 @@ import 'package:investra/features/home/presentation/widgets/build_submit_button.
 import 'package:investra/features/notifications/presentation/pages/notifications_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// الصفحة الرئيسية للمؤسس (Entrepreneur Home).
-/// تعرض الأفكار النشطة وطلبات المحادثة — الضغط على بطاقة فكرة يفتح شاشة التفاصيل.
 class EntrepreneurHomeScreen extends StatelessWidget {
   final ScrollController? scrollController;
 
@@ -64,8 +62,7 @@ class EntrepreneurHomeScreen extends StatelessWidget {
           child: StreamBuilder<List<Map<String, dynamic>>>(
             stream: supabase
                 .from('ideas')
-                .stream(primaryKey: ['id'])
-                .eq('entrepreneur_id', userId),
+                .stream(primaryKey: ['id']).eq('entrepreneur_id', userId),
             builder: (context, snapshot) {
               final ideasList = snapshot.data ?? [];
               final int count = ideasList.length;
@@ -76,28 +73,30 @@ class EntrepreneurHomeScreen extends StatelessWidget {
                 children: [
                   _buildHeader(userId),
                   const SizedBox(height: 24),
+                  // ✅ الـ submission card يعرض الـ limit تلقائياً
                   BuildSubmissionCard(
                     currentCount: count,
                     maxLimit: 2,
                     remainingSlots: (2 - count).clamp(0, 2),
                   ),
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 24),
                   const BuildSectionHeader(
                     title: 'Your Active Ideas',
                     action: '',
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   _buildIdeaSection(context, ideasList),
-                  const SizedBox(height: 16),
-                  reachedLimit
-                      ? _buildLimitReachedMessage()
-                      : const BuildSubmitButton(),
-                  const SizedBox(height: 32),
+                  // ✅ زر Submit بس إذا ما وصل الـ limit — بدون رسالة إضافية
+                  if (!reachedLimit) ...[
+                    const SizedBox(height: 12),
+                    const BuildSubmitButton(),
+                  ],
+                  const SizedBox(height: 24),
                   const BuildSectionHeader(
                     title: 'Recent Chat Requests',
                     action: '',
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   _buildChatRequestsStream(supabase, userId),
                   const SizedBox(height: 80),
                 ],
@@ -138,8 +137,7 @@ class EntrepreneurHomeScreen extends StatelessWidget {
     return StreamBuilder<List<Map<String, dynamic>>>(
       stream: supabase
           .from('requests')
-          .stream(primaryKey: ['id'])
-          .eq('receiver_id', userId),
+          .stream(primaryKey: ['id']).eq('receiver_id', userId),
       builder: (context, snapshot) {
         if (!snapshot.hasData || snapshot.data!.isEmpty) {
           return _buildEmptyState('No requests found.');
@@ -149,7 +147,6 @@ class EntrepreneurHomeScreen extends StatelessWidget {
           final isPending = req['status'] == 'pending';
           final content = (req['content'] ?? '').toString().toLowerCase();
           final isInvestment = content.contains('investment') ||
-              content.contains('invest') ||
               req['type'] == 'invest';
           return isPending && !isInvestment;
         }).take(3).toList();
@@ -178,6 +175,7 @@ class EntrepreneurHomeScreen extends StatelessWidget {
                   ideaId,
                   context,
                 ),
+
                 onDeclineTap: () =>
                     _processDecline(supabase, requestId, context),
               ),
@@ -189,18 +187,17 @@ class EntrepreneurHomeScreen extends StatelessWidget {
   }
 
   Future<void> _processAccept(
-    SupabaseClient supabase,
-    String requestId,
-    String userId,
-    String investorId,
-    String? ideaId,
-    BuildContext context,
-  ) async {
+      SupabaseClient supabase,
+      String requestId,
+      String userId,
+      String investorId,
+      String? ideaId,
+      BuildContext context,
+      ) async {
     try {
       await supabase
           .from('requests')
-          .update({'status': 'accepted'})
-          .eq('id', requestId);
+          .update({'status': 'accepted'}).eq('id', requestId);
 
       if (ideaId != null) {
         final existingChat = await supabase
@@ -223,7 +220,7 @@ class EntrepreneurHomeScreen extends StatelessWidget {
           'user_id': investorId,
           'title': 'Request Accepted! 🎉',
           'content':
-              'Your request has been accepted. You can start chatting now!',
+          'Your request has been accepted. You can start chatting now!',
           'type': 'chat_accepted',
           'is_read': false,
           'idea_id': ideaId,
@@ -233,9 +230,7 @@ class EntrepreneurHomeScreen extends StatelessWidget {
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Chat created! Connection established.'),
-          ),
+          const SnackBar(content: Text('Chat created! Connection established.')),
         );
       }
     } catch (e) {
@@ -244,15 +239,14 @@ class EntrepreneurHomeScreen extends StatelessWidget {
   }
 
   Future<void> _processDecline(
-    SupabaseClient supabase,
-    String requestId,
-    BuildContext context,
-  ) async {
+      SupabaseClient supabase,
+      String requestId,
+      BuildContext context,
+      ) async {
     try {
       await supabase
           .from('requests')
-          .update({'status': 'declined'})
-          .eq('id', requestId);
+          .update({'status': 'rejected'}).eq('id', requestId);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Request declined.')),
@@ -264,9 +258,9 @@ class EntrepreneurHomeScreen extends StatelessWidget {
   }
 
   Widget _buildIdeaSection(
-    BuildContext context,
-    List<Map<String, dynamic>> ideasList,
-  ) {
+      BuildContext context,
+      List<Map<String, dynamic>> ideasList,
+      ) {
     if (ideasList.isEmpty) {
       return _buildEmptyState('No ideas posted yet.');
     }
@@ -283,7 +277,7 @@ class EntrepreneurHomeScreen extends StatelessWidget {
     return Column(
       children: ideasList.map((idea) {
         return Padding(
-          padding: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.only(bottom: 10),
           child: GestureDetector(
             onTap: () async {
               await Navigator.push(
@@ -312,8 +306,7 @@ class EntrepreneurHomeScreen extends StatelessWidget {
     return StreamBuilder<List<Map<String, dynamic>>>(
       stream: supabase
           .from('notifications')
-          .stream(primaryKey: ['id'])
-          .eq('user_id', userId),
+          .stream(primaryKey: ['id']).eq('user_id', userId),
       builder: (context, snapshot) {
         final hasUnread = snapshot.data?.any((n) => !n['is_read']) ?? false;
         return IconButton(
@@ -349,33 +342,6 @@ class EntrepreneurHomeScreen extends StatelessWidget {
           ),
         );
       },
-    );
-  }
-
-  Widget _buildLimitReachedMessage() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.bgColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.secondary1Color),
-      ),
-      child: const Row(
-        children: [
-          Icon(Icons.info_outline, color: AppColors.primaryColor),
-          SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              'Limit reached (2/2 ideas).',
-              style: TextStyle(
-                color: AppColors.blackColor,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 

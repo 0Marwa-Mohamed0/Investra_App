@@ -18,9 +18,17 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class EntrepreneurIdeaDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> ideaData;
 
+  // ✅ يتم تمريرهم فقط لما الشاشة بتُفتح من إشعار استثمار:
+  // investorId = هوية المستثمر اللي قدّم الطلب (sender_id من جدول requests)
+  // requestId  = id الطلب نفسه (من جدول requests) عشان نحدّث حالته بعد التمويل
+  final String? investorId;
+  final String? requestId;
+
   const EntrepreneurIdeaDetailsScreen({
     super.key,
     required this.ideaData,
+    this.investorId,
+    this.requestId,
   });
 
   @override
@@ -267,6 +275,10 @@ class _EntrepreneurIdeaDetailsScreenState
 
     setState(() => _isSaving = true);
 
+    // ✅ نحفظ هاي القيمة هنا قبل ما نفضي القايمة بالأسفل بعد الرفع،
+    // لأنها بتحدد إذا لازم نعمل عملية "Funding" كاملة بعد الحفظ.
+    final bool hadNewContract = _newContractFiles.isNotEmpty;
+
     try {
       List<String> updatedDocUrls = List.from(_existingDocUrls);
 
@@ -308,13 +320,47 @@ class _EntrepreneurIdeaDetailsScreenState
         updatedDocUrls.add(newUrl);
       }
 
-      // 3) تحديث جدول ideas
+      // 3) تحديث جدول ideas (العنوان، الوصف، التصنيف، المستندات)
       await _supabase.from('ideas').update({
         'title': _titleController.text.trim(),
         'description': _pitchController.text.trim(),
         'category': _category ?? _originalCategory,
         'idea_docs': updatedDocUrls,
       }).eq('id', ideaId);
+
+      // ✅ 4) لو هاي الشاشة مفتوحة من إشعار استثمار وتم رفع عقد جديد،
+      // نعمل عملية "تمويل" كاملة:
+      //   - تحويل حالة الفكرة من pending إلى funded
+      //   - تسجيل الاستثمار بجدول investments (ربط investor_id بـ idea_id)
+      //   - تحديث حالة الـ request المرتبط لـ funded
+      //   - إرسال إشعار تأكيد للمستثمر
+      if (hadNewContract && widget.investorId != null) {
+        await _supabase
+            .from('ideas')
+            .update({'status': 'funded'}).eq('id', ideaId);
+
+        await _supabase.from('investments').insert({
+          'investor_id': widget.investorId,
+          'idea_id': ideaId,
+          'investment_date': DateTime.now().toIso8601String(),
+        });
+
+        if (widget.requestId != null) {
+          await _supabase
+              .from('requests')
+              .update({'status': 'funded'}).eq('id', widget.requestId!);
+        }
+
+        await _supabase.from('notifications').insert({
+          'user_id': widget.investorId,
+          'title': 'Investment Confirmed! 🎉',
+          'content':
+          'Your investment in "${_titleController.text.trim()}" has been confirmed and the contract is signed.',
+          'type': 'funded',
+          'is_read': false,
+          'idea_id': ideaId,
+        });
+      }
 
       if (mounted) {
         _originalTitle = _titleController.text.trim();

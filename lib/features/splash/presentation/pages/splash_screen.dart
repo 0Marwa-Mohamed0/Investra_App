@@ -5,8 +5,9 @@ import 'package:investra/core/styles/colors.dart';
 import 'package:investra/features/auth/data/services/auth_service.dart';
 import 'package:investra/features/auth/presentation/pages/login_screen.dart';
 import 'package:investra/features/main_app/presentation/pages/main_app_entrepreneur_screen.dart';
-import 'package:investra/features/auth/presentation/pages/register_screen.dart';
 import 'package:investra/features/main_app/presentation/pages/main_app_investor_screen.dart';
+import 'package:investra/features/onboarding/presentation/pages/onboarding_screen.dart';
+
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
@@ -16,10 +17,8 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMixin {
   late AnimationController _mainController;
-  late AnimationController _pulseController;
   late Animation<double> _fadeAnimation;
   late Animation<double> _scaleAnimation;
-  late Animation<double> _pulseAnimation;
 
   @override
   void initState() {
@@ -27,45 +26,34 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
 
     _mainController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 2000),
+      duration: const Duration(milliseconds: 1500),
     );
+    
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _mainController, curve: Curves.easeIn),
     );
-    _scaleAnimation = Tween<double>(begin: 0.6, end: 1.0).animate(
-      CurvedAnimation(parent: _mainController, curve: Curves.elasticOut),
-    );
-
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 3),
-    )..repeat(reverse: true);
-    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.05).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    
+    _scaleAnimation = Tween<double>(begin: 0.9, end: 1.0).animate(
+      CurvedAnimation(parent: _mainController, curve: Curves.easeOutBack),
     );
 
     _mainController.forward();
-
     _handleNavigation();
   }
 
   Future<void> _handleNavigation() async {
-    await Future.delayed(const Duration(seconds: 4));
+    await Future.delayed(const Duration(seconds: 3));
     if (!mounted) return;
 
     try {
-
       final session = Supabase.instance.client.auth.currentSession;
-
       final prefs = await SharedPreferences.getInstance();
       final bool isNotNewDevice = prefs.getBool('is_not_new_device') ?? false;
 
       if (session != null) {
         final String role = await AuthService().updateUserSessionAndGetRole(session.user.id);
-
         if (!mounted) return;
-
-        await prefs.setBool('is_not_not_new_device', true);
+        await prefs.setBool('is_not_new_device', true);
 
         if (role == 'Entrepreneur') {
           _navigateTo(const MainAppEntrepreneurScreen());
@@ -74,17 +62,12 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
         } else {
           _navigateTo(const LoginScreen());
         }
-
       } else {
-
         if (isNotNewDevice) {
-
-
           _navigateTo(const LoginScreen());
         } else {
           await prefs.setBool('is_not_new_device', true);
-
-          _navigateTo(const RegistrationScreen());
+          _navigateTo(const OnboardingScreen());
         }
       }
     } catch (e) {
@@ -103,7 +86,7 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           return FadeTransition(opacity: animation, child: child);
         },
-        transitionDuration: const Duration(milliseconds: 1200),
+        transitionDuration: const Duration(milliseconds: 800),
       ),
     );
   }
@@ -111,101 +94,35 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
   @override
   void dispose() {
     _mainController.dispose();
-    _pulseController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.bg,
+      backgroundColor: Colors.white,
       body: Container(
         width: double.infinity,
         height: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: RadialGradient(
-            center: Alignment.center,
-            radius: 1.5,
-            colors: [
-              Color(0xFFE0F2FE),
-              Colors.white,
-            ],
-          ),
-        ),
+        color: Colors.white,
         child: Stack(
           alignment: Alignment.center,
           children: [
-            // 1. Floating Particles for depth
-            ...List.generate(5, (index) => _PositionedParticle(index: index)),
-
-            // 2. Centered Logo
+            // Centered Big Logo
             Center(
               child: FadeTransition(
                 opacity: _fadeAnimation,
                 child: ScaleTransition(
-                  scale: _pulseAnimation,
-                  child: ScaleTransition(
-                    scale: _scaleAnimation,
-                    child: Image.asset(
-                      'assets/images/App_logo.png',
-                      width: MediaQuery.of(context).size.width * 0.9,
-                      fit: BoxFit.contain,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-
-            // 3. Elegant Bottom Line
-            Positioned(
-              bottom: 80,
-              left: 0,
-              right: 0,
-              child: FadeTransition(
-                opacity: _fadeAnimation,
-                child: Center(
-                  child: Container(
-                    width: 50,
-                    height: 2,
-                    decoration: BoxDecoration(
-                      color: AppColors.primaryColor.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(1),
-                    ),
+                  scale: _scaleAnimation,
+                  child: Image.asset(
+                    'assets/images/big_logo.png',
+                    width: MediaQuery.of(context).size.width * 0.95,
+                    fit: BoxFit.contain,
                   ),
                 ),
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _PositionedParticle extends StatelessWidget {
-  final int index;
-  const _PositionedParticle({required this.index});
-
-  @override
-  Widget build(BuildContext context) {
-    final List<Offset> offsets = [
-      const Offset(-100, -150),
-      const Offset(120, -100),
-      const Offset(-80, 180),
-      const Offset(100, 150),
-      const Offset(0, -200),
-    ];
-
-    return Center(
-      child: Transform.translate(
-        offset: offsets[index % offsets.length],
-        child: Container(
-          width: 8 + (index * 2),
-          height: 8 + (index * 2),
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: AppColors.primaryColor.withValues(alpha: 0.05),
-          ),
         ),
       ),
     );

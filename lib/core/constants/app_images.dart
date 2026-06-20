@@ -55,6 +55,8 @@ abstract class AppImages {
   static const String technology_idea= 'assets/images/conny-schneider-xuTJZ7uD7PI-unsplash.jpg';
 
 
-
+//finalsss
+  static const String small_logo= 'assets/images/small_logo.png';
+  static const String big_logo= 'assets/images/big_logo';
 
 }

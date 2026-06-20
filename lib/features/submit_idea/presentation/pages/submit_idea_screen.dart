@@ -29,8 +29,6 @@ class _SubmitIdeaScreenState extends State<SubmitIdeaScreen> {
   bool _isUploading = false;
 
   String? _category;
-  bool _businessPlan = false;
-  bool _feasibilityStudy = false;
 
   int _completedSteps = 0;
   double _progress = 0;
@@ -68,7 +66,8 @@ class _SubmitIdeaScreenState extends State<SubmitIdeaScreen> {
 
   bool get _step2Complete => _pitchController.text.trim().isNotEmpty;
 
-  bool get _step3Complete => _businessPlan || _feasibilityStudy;
+  bool get _step3Complete =>
+      _businessPlanFile != null || _feasibilityFile != null;
 
   /// Updates step counter, progress bar, submit enabled state, and completed count.
   void updateStepProgress() {
@@ -87,12 +86,6 @@ class _SubmitIdeaScreenState extends State<SubmitIdeaScreen> {
     });
   }
 
-
-
-
-
-
-
   // 1. وظيفة لاختيار الملف من الموبايل وتخزينه
   Future<void> _pickDocument(bool isBusinessPlan) async {
     FilePickerResult? result = await FilePicker.platform.pickFiles(
@@ -104,17 +97,15 @@ class _SubmitIdeaScreenState extends State<SubmitIdeaScreen> {
       setState(() {
         if (isBusinessPlan) {
           _businessPlanFile = File(result.files.single.path!);
-          _businessPlan = true;
         } else {
           _feasibilityFile = File(result.files.single.path!);
-          _feasibilityStudy = true;
         }
       });
       updateStepProgress();
     }
   }
 
-  // 2. الوظيفة النهائية لرفع الملفات للـ Storage وحفظ البيانات في الجدول
+
   Future<void> _submitAllData() async {
     setState(() => _isUploading = true);
 
@@ -129,7 +120,7 @@ class _SubmitIdeaScreenState extends State<SubmitIdeaScreen> {
 
       if (mounted) {
         CustomSnackBar.showSuccess(context, 'Your idea has been submitted successfully!');
-        Navigator.pop(context); // Back to home after success
+        Navigator.pop(context);
       }
     } catch (e) {
       if (mounted) {
@@ -139,11 +130,6 @@ class _SubmitIdeaScreenState extends State<SubmitIdeaScreen> {
       if (mounted) setState(() => _isUploading = false);
     }
   }
-
-
-
-
-
 
   String _stepSubtitle() {
     if (!_step1Complete) return 'Project Fundamentals';
@@ -254,10 +240,10 @@ class _SubmitIdeaScreenState extends State<SubmitIdeaScreen> {
                   items: _categories
                       .map(
                         (c) => DropdownMenuItem<String>(
-                          value: c,
-                          child: Text(c),
-                        ),
-                      )
+                      value: c,
+                      child: Text(c),
+                    ),
+                  )
                       .toList(),
                   onChanged: (value) {
                     setState(() => _category = value);
@@ -292,36 +278,27 @@ class _SubmitIdeaScreenState extends State<SubmitIdeaScreen> {
             ),
             const SizedBox(height: 12),
 
-
             _ChecklistTile(
               label: 'Business Plan',
-              isChecked: _businessPlan,
+              isChecked: _businessPlanFile != null,
               isFileUploaded: _businessPlanFile != null,
-              onCheckboxChanged: (v) {
-                setState(() => _businessPlan = v ?? false);
-                updateStepProgress();
-              },
+              onCheckboxChanged: (v) => _pickDocument(true),
               onAdd: () => _pickDocument(true),
             ),
             const SizedBox(height: 8),
             _ChecklistTile(
               label: 'Feasibility Study',
-              isChecked: _feasibilityStudy,
+              isChecked: _feasibilityFile != null,
               isFileUploaded: _feasibilityFile != null,
-              onCheckboxChanged: (v) {
-                setState(() => _feasibilityStudy = v ?? false);
-                updateStepProgress();
-              },
+              onCheckboxChanged: (v) => _pickDocument(false),
               onAdd: () => _pickDocument(false),
             ),
             const SizedBox(height: 28),
 
             SubmitIdeaSubmitButton(
-
               enabled: _formComplete && !_isUploading,
               onPressed: _submitAllData,
             ),
-
 
             const SizedBox(height: 12),
             Center(

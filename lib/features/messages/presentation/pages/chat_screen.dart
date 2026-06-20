@@ -8,6 +8,7 @@ import 'package:investra/features/messages/data/chat_supabase_service.dart';
 import 'package:investra/features/messages/domain/entities/chat_contact.dart';
 import 'package:investra/features/messages/domain/entities/chat_message.dart';
 import 'package:investra/features/messages/domain/entities/chat_thread_item.dart';
+import 'package:investra/features/messages/presentation/pages/nda_screen.dart';
 import 'package:investra/features/messages/presentation/widgets/chat_bubble.dart';
 import 'package:investra/features/messages/presentation/widgets/chat_attachment_bottom_sheet.dart';
 import 'package:investra/features/messages/presentation/widgets/message_input_bar.dart';
@@ -26,7 +27,6 @@ class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _messageController = TextEditingController();
   final ChatSupabaseService _service = ChatSupabaseService();
 
-  // ✅ نستخدم StreamSubscription بدل RealtimeChannel
   StreamSubscription<List<Map<String, dynamic>>>? _streamSub;
 
   List<ChatThreadItem> _items = [];
@@ -34,7 +34,6 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isFirstLoad = true;
   int _newMessageCount = 0;
 
-  // نحتفظ بآخر Set من الـ IDs اللي عندنا عشان نعرف الجديد من القديم
   final Set<String> _knownIds = {};
 
   ChatContact get _user => widget.user;
@@ -46,6 +45,7 @@ class _ChatScreenState extends State<ChatScreen> {
     super.initState();
     _scrollController.addListener(_handleScroll);
     _startStream();
+    _service.markMessagesAsRead(_user.id);
   }
 
   @override
@@ -57,9 +57,7 @@ class _ChatScreenState extends State<ChatScreen> {
     super.dispose();
   }
 
-  // ── ✅ Stream يستمع لجدول message مباشرة ─────────────────────────────────
-  // .stream() من Supabase شغّالة دايماً بدون إعدادات Realtime
-  // بتتحدث أوتوماتيك عند أي INSERT أو UPDATE في الـ chat_id ده
+  // ── Stream ────────────────────────────────────────────────────────────────
   void _startStream() {
     _streamSub = _service.streamMessages(_user.id).listen((rows) {
       if (!mounted) return;
@@ -73,9 +71,9 @@ class _ChatScreenState extends State<ChatScreen> {
         final msgId = r['messageid'].toString();
         final dt = DateTime.tryParse(r['time stamp'] ?? '')?.toLocal();
         final isFromUser = r['sender_id'] == myId;
-        const isRead = true; // تم جعلها true دائماً بناءً على طلب إزالة الـ seen
+        final isRead = r['is read'] == true;
+        final messageType = r['message_type'] ?? 'text';
 
-        // ✅ اكتشاف رسائل جديدة من الطرف التاني (مش موجودة في _knownIds)
         if (!isFromUser && !_knownIds.contains(msgId) && !_isFirstLoad) {
           hasNewIncoming = true;
         }
@@ -94,6 +92,7 @@ class _ChatScreenState extends State<ChatScreen> {
           isFromUser: isFromUser,
           timeLabel: dt != null ? _formatTimeLocal(dt) : '',
           isRead: isRead,
+          messageType: messageType,
         )));
       }
 
@@ -105,15 +104,17 @@ class _ChatScreenState extends State<ChatScreen> {
       });
 
       if (wasFirstLoad) {
-        // أول تحميل → اسكرول للأسفل بدون animation
         WidgetsBinding.instance.addPostFrameCallback(
               (_) => _scrollToBottom(animated: false),
         );
       } else if (hasNewIncoming && !_showJumpToLatest) {
-        // رسالة جديدة وأنا في الأسفل → اسكرول تلقائي
         WidgetsBinding.instance.addPostFrameCallback(
               (_) => _scrollToBottom(animated: true),
         );
+      }
+
+      if (hasNewIncoming) {
+        _service.markMessagesAsRead(_user.id);
       }
     });
   }
@@ -147,14 +148,12 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() => _newMessageCount = 0);
   }
 
-  // ── إرسال رسالة ──────────────────────────────────────────────────────────
+  // ── إرسال رسالة نصية ─────────────────────────────────────────────────────
   Future<void> _send() async {
     final t = _messageController.text.trim();
     if (t.isEmpty) return;
     _messageController.clear();
 
-    // ✅ Optimistic UI — أضف الرسالة فوراً بـ id مؤقت
-    // الـ stream سيستبدلها بالنسخة الحقيقية من DB في ثوانٍ
     final tempId = 'local_${DateTime.now().microsecondsSinceEpoch}';
     setState(() {
       _items.add(ChatMessageItem(ChatMessage(
@@ -163,6 +162,7 @@ class _ChatScreenState extends State<ChatScreen> {
         isFromUser: true,
         timeLabel: _timeNow(),
         isRead: false,
+        messageType: 'text',
       )));
     });
     WidgetsBinding.instance.addPostFrameCallback(
@@ -171,19 +171,26 @@ class _ChatScreenState extends State<ChatScreen> {
 
     try {
       await _service.sendMessage(chatId: _user.id, text: t);
-      // الـ stream هيتحدث أوتوماتيك بعد الـ INSERT ويضيف الرسالة الحقيقية
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('فشل الإرسال: $e')),
         );
-        // احذف الـ optimistic message لو فشل الإرسال
         setState(() {
           _items.removeWhere(
                   (i) => i is ChatMessageItem && i.message.id == tempId);
         });
       }
     }
+  }
+
+  // ── ✅ فتح NDA screen للإنفستور ──────────────────────────────────────────
+  void _openNdaForSigning() {
+    Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => NdaScreen(chatId: _user.id),
+      ),
+    );
   }
 
   String _formatTimeLocal(DateTime dt) {
@@ -315,6 +322,10 @@ class _ChatScreenState extends State<ChatScreen> {
                         showPeerAvatar: !item.message.isFromUser,
                         peerAvatarUrl: _user.avatarUrl,
                         peerInitial: _user.fullName,
+                        onSignNda: item.message.isNda &&
+                            !item.message.isFromUser
+                            ? _openNdaForSigning
+                            : null,
                       );
                     }
                     return const SizedBox.shrink();
@@ -370,7 +381,10 @@ class _ChatScreenState extends State<ChatScreen> {
           MessageInputBar(
             controller: _messageController,
             onSend: _send,
-            onAttachment: () => ChatAttachmentBottomSheet.show(context),
+            onAttachment: () => ChatAttachmentBottomSheet.show(
+              context,
+              chatId: _user.id,
+            ),
           ),
         ],
       ),

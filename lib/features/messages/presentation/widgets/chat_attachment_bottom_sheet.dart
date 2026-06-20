@@ -2,6 +2,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:investra/core/styles/colors.dart';
+import 'package:investra/features/messages/presentation/pages/nda_screen.dart';
 
 class ChatAttachmentBottomSheet extends StatelessWidget {
   const ChatAttachmentBottomSheet({
@@ -15,7 +16,8 @@ class ChatAttachmentBottomSheet extends StatelessWidget {
   final Future<void> Function() onImageTap;
   final Future<void> Function() onNdaTap;
 
-  static Future<void> show(BuildContext context) {
+  // ✅ الآن بتستقبل chatId وتمرره لـ NdaScreen
+  static Future<void> show(BuildContext context, {required String chatId}) {
     return showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
@@ -32,18 +34,23 @@ class ChatAttachmentBottomSheet extends StatelessWidget {
           },
           onNdaTap: () async {
             Navigator.of(sheetContext).pop();
-            _onNdaClicked();
+            // ✅ فتح NdaScreen وتمرير الـ chatId
+            await Navigator.of(context).push<bool>(
+              MaterialPageRoute(
+                builder: (_) => NdaScreen(chatId: chatId),
+              ),
+            );
           },
         );
       },
     );
   }
 
-  /// Shared document picker (same flow as the attachment sheet "Document" action).
+  /// Shared document picker
   static Future<void> pickDocument(
-    BuildContext context, {
-    void Function(String fileName)? onFilePicked,
-  }) async {
+      BuildContext context, {
+        void Function(String fileName)? onFilePicked,
+      }) async {
     final result = await FilePicker.platform.pickFiles();
     if (result == null || result.files.isEmpty) return;
 
@@ -74,18 +81,13 @@ class ChatAttachmentBottomSheet extends StatelessWidget {
     );
   }
 
-  static void _onNdaClicked() {
-    debugPrint('NDA Clicked');
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final surfaceColor = isDark ? const Color(0xFF1B2635) : AppColors.bgColor;
-    final tileColor = isDark
-        ? const Color(0xFF233144)
-        : AppColors.secondary2Color;
+    final tileColor =
+    isDark ? const Color(0xFF233144) : AppColors.secondary2Color;
     final titleColor = theme.colorScheme.onSurface;
     final subtitleColor = theme.colorScheme.onSurface.withValues(alpha: 0.65);
 
