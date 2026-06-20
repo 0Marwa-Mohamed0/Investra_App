@@ -88,7 +88,40 @@ class ProfileService {
   }
 
   Future<int> getInvestorInvestmentsCount(String userId) async {
-    return 0;
+    try {
+      final response = await _supabase
+          .from('investments')
+          .select('id')
+          .eq('investor_id', userId);
+      return response.length;
+    } catch (e) {
+      debugPrint('Error counting investments: $e');
+      return 0;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getInvestorInvestments(String userId) async {
+    try {
+      final response = await _supabase
+          .from('investments')
+          .select('id, idea_id, investment_date, ideas(title, description, status, ai_rating)')
+          .eq('investor_id', userId);
+
+      return response.map<Map<String, dynamic>>((row) {
+        final idea = row['ideas'] as Map<String, dynamic>?;
+        return {
+          'investment_id': row['id'],
+          'idea_id': row['idea_id'],
+          'investment_date': row['investment_date'],
+          'title': idea?['title'] ?? 'Untitled Idea',
+          'description': idea?['description'] ?? '',
+          'status': idea?['status'] ?? 'pending',
+        };
+      }).toList();
+    } catch (e) {
+      debugPrint('Error fetching investor investments: $e');
+      return [];
+    }
   }
 
   Future<int> getInvestorChatsCount(String userId) async {

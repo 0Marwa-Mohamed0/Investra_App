@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:investra/core/styles/colors.dart';
 import 'package:investra/features/notifications/data/models/notification_model.dart';
 import 'package:investra/features/profile/presentation/pages/profile_screen.dart';
+import 'package:investra/features/idea_details/domain/idea_logic.dart';
+import 'package:investra/features/home/presentation/pages/entrepreneur_idea_details_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 
@@ -89,6 +91,10 @@ class NotificationsScreen extends StatelessWidget {
       ),
       child: InkWell(
         onTap: () async {
+          // 🔍 تشخيص مؤقت — شوف نتيجته بالـ Debug Console وبعدين نشيله
+          debugPrint(
+              'NOTIF DEBUG -> type: ${item.type} | ideaId: ${item.ideaId} | requestId: ${item.requestId}');
+
           try {
             await supabase
                 .from('notifications')
@@ -98,17 +104,45 @@ class NotificationsScreen extends StatelessWidget {
             debugPrint("Error marking notification as read: $e");
           }
 
-          if (item.type == 'invest' || item.type == 'chat') {
-            /* // TODO: فتح تفاصيل الفكرة من جهة رائد الأعمال
-            if (context.mounted && item.ideaId != null) {
+          // ✅ إشعار استثمار: ودّي رائد الأعمال لصفحة تفاصيل الفكرة مباشرة
+          // مع تمرير هوية المستثمر وطلب الاستثمار المرتبط، عشان لما يرفع
+          // العقد تنعمل عملية "Funding" كاملة (تحديث حالة الفكرة + investments + إشعار رد).
+          if (item.type == 'invest') {
+            if (item.ideaId == null) {
+              debugPrint('NOTIF DEBUG -> ideaId is null, cannot navigate.');
+              return;
+            }
+
+            final logic = IdeaLogic();
+            final idea = await logic.getIdeaById(item.ideaId!);
+            final investorId = item.requestId != null
+                ? await logic.getInvestorIdFromRequest(item.requestId!)
+                : null;
+
+            debugPrint(
+                'NOTIF DEBUG -> idea: ${idea != null} | investorId: $investorId');
+
+            if (idea != null && context.mounted) {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => EntrepreneurIdeaDetailsScreen(ideaId: item.ideaId),
+                  builder: (context) => EntrepreneurIdeaDetailsScreen(
+                    ideaData: idea,
+                    investorId: investorId,
+                    requestId: item.requestId,
+                  ),
                 ),
               );
             }
-            */
+            return;
+          }
+
+          // ✅ إشعار "تم تأكيد الاستثمار" (يصل للمستثمر) — حالياً بدون تنقل خاص
+          if (item.type == 'funded') {
+            return;
+          }
+
+          if (item.type == 'chat') {
             return;
           }
 

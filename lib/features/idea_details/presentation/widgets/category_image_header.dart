@@ -16,7 +16,7 @@ class CategoryImageHeader extends StatelessWidget {
     return Container(
       height: 180,
       width: double.infinity,
-      // 🛠️ قللنا الـ vertical margin من 8 لـ 4 عشان نرفع الكرت لفوق
+
       margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(

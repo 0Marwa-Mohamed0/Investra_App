@@ -15,11 +15,15 @@ dependencies:
   cached_network_image: ^3.4.1
   image_picker: ^1.2.1
   file_picker: ^8.0.0+1
-
   supabase_flutter: ^2.12.4
-  # تنسيق التاريخ والوقت
   intl: ^0.20.2
   open_filex: ^4.7.0
+  signature: ^5.4.0
+  pdf: ^3.11.1
+  printing: ^5.13.1
+
+
+
 
 dev_dependencies:
   flutter_test:
@@ -31,17 +35,17 @@ dev_dependencies:
 flutter_launcher_icons:
   android: "launcher_icon"
   ios: true
-  image_path: "assets/images/logo22.png"
+  image_path: "assets/images/small_logo.png"
   min_sdk_android: 21
   adaptive_icon_background: "#FFFFFF"
-  adaptive_icon_foreground: "assets/images/logo22.png"
-  adaptive_icon_foreground_inset: 15
+  adaptive_icon_foreground: "assets/images/small_logo.png"
+  adaptive_icon_foreground_inset: 0
 
 flutter_native_splash:
   color: "#FFFFFF"
-  image: assets/images/logo22.png # نستخدم الرسمة فقط هنا لكي لا تُقص
+  image: assets/images/small_logo.png
   android_12:
-    image: assets/images/logo22.png
+    image: assets/images/small_logo.png
     color: "#FFFFFF"
     icon_background_color: "#FFFFFF"
   fullscreen: true
@@ -57,5 +61,3 @@ flutter:
     - family: DMSerif
       fonts:
         - asset: assets/fonts/DMSerifDisplay-Regular.ttf
-
-    

@@ -1,11 +1,6 @@
-
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:investra/features/messages/domain/entities/chat_contact.dart';
 import 'package:investra/features/messages/domain/entities/chat_message.dart';
-
-// ─── أسماء الأعمدة الحقيقية في DB (بالمسافات) ───────────────────────────
-// messageid | chat_id | sender_id | Message text | is read | time stamp
-// ─────────────────────────────────────────────────────────────────────────
 
 class ChatSupabaseService {
   final _sb = Supabase.instance.client;
@@ -27,7 +22,8 @@ class ChatSupabaseService {
             messageid,
             "Message text",
             "time stamp",
-            sender_id
+            sender_id,
+            message_type
           )
         ''')
         .or('entrepreneur_id.eq.$_myId,investor_id.eq.$_myId');
@@ -39,7 +35,6 @@ class ChatSupabaseService {
       final String peerId =
       iAmEntrepreneur ? row['investor_id'] : row['entrepreneur_id'];
 
-      // جيب بيانات الطرف التاني
       final profileRow = await _sb
           .from('User')
           .select('FullName')
@@ -58,15 +53,17 @@ class ChatSupabaseService {
         fullName = p!['FullName'];
       }
 
-      // رتّب الرسائل
       final List msgs = row['message'] ?? [];
       msgs.sort((a, b) =>
           (a['time stamp'] ?? '').compareTo(b['time stamp'] ?? ''));
 
       final lastMsg = msgs.isNotEmpty ? msgs.last : null;
-      final String preview = lastMsg?['Message text'] ?? '...';
+      final String preview = lastMsg == null
+          ? '...'
+          : (lastMsg['message_type'] == 'nda'
+          ? '📄 NDA Agreement'
+          : lastMsg['Message text'] ?? '...');
 
-      // ✅ تم إزالة عداد الرسائل بناءً على طلب المستخدم
       const int unreadCount = 0;
 
       final String timeAgo = lastMsg != null
@@ -102,7 +99,8 @@ class ChatSupabaseService {
   Future<List<ChatMessage>> fetchMessages(String chatId) async {
     final rows = await _sb
         .from('message')
-        .select('messageid, "Message text", sender_id, "time stamp"')
+        .select(
+        'messageid, "Message text", sender_id, "time stamp", "is read", message_type')
         .eq('chat_id', chatId)
         .order('time stamp', ascending: true);
 
@@ -113,12 +111,13 @@ class ChatSupabaseService {
         text: r['Message text'] ?? '',
         isFromUser: r['sender_id'] == _myId,
         timeLabel: dt != null ? _formatTime(dt) : '',
-        isRead: true,
+        isRead: r['is read'] == true,
+        messageType: r['message_type'] ?? 'text',
       );
     }).toList();
   }
 
-  // ── 3. ابعت رسالة ────────────────────────────────────────────────────────
+
   Future<void> sendMessage({
     required String chatId,
     required String text,
@@ -127,15 +126,33 @@ class ChatSupabaseService {
       'chat_id': chatId,
       'sender_id': _myId,
       'Message text': text,
-      'is read': true, // تم جعلها true دائماً بناءً على طلب إزالة الـ seen
+      'is read': false,
+      'message_type': 'text',
     });
   }
 
-  // ── 4. ✅ تم إزالة وظيفة علّم رسائل الطرف التاني كمقروءة بناءً على الطلب
 
-  // ── 5. ✅ Realtime داخل شاشة الشات ──────────────────────────────────────
-  // بدل Postgres Changes (تحتاج Realtime مفعّل على الجدول)،
-  // نستخدم .stream() اللي شغّالة دايماً بدون أي إعدادات
+  Future<void> sendNdaRequest({required String chatId}) async {
+    await _sb.from('message').insert({
+      'chat_id': chatId,
+      'sender_id': _myId,
+      'Message text': 'NDA_REQUEST',
+      'is read': false,
+      'message_type': 'nda',
+    });
+  }
+
+
+  Future<void> markMessagesAsRead(String chatId) async {
+    await _sb
+        .from('message')
+        .update({'is read': true})
+        .eq('chat_id', chatId)
+        .neq('sender_id', _myId)
+        .eq('is read', false);
+  }
+
+
   Stream<List<Map<String, dynamic>>> streamMessages(String chatId) {
     return _sb
         .from('message')
@@ -144,15 +161,12 @@ class ChatSupabaseService {
         .order('time stamp', ascending: true);
   }
 
-  // ── 6. ✅ Realtime لقائمة الشاتات ────────────────────────────────────────
-  // .stream() على جدول message — تتحدث أوتوماتيك عند أي INSERT أو UPDATE
+
   Stream<List<Map<String, dynamic>>> streamAllMessages() {
-    return _sb
-        .from('message')
-        .stream(primaryKey: ['messageid']);
+    return _sb.from('message').stream(primaryKey: ['messageid']);
   }
 
-  // ── 7. اعمل شات جديد (لو مش موجود) ─────────────────────────────────────
+
   Future<String> getOrCreateChat({
     required String otherUserId,
     required String ideaId,
@@ -184,7 +198,7 @@ class ChatSupabaseService {
     return created['chat_id'];
   }
 
-  // ── Helpers ──────────────────────────────────────────────────────────────
+
   Future<bool> _isEntrepreneur() async {
     final row = await _sb
         .from('User')

@@ -1,8 +1,3 @@
-// ═══════════════════════════════════════════════════════════════════════════
-// 📁 المسار: lib/features/idea_details/presentation/pages/idea_details_screen.dart
-// ℹ️  استبدل الملف القديم بهذا الملف بالكامل
-// ═══════════════════════════════════════════════════════════════════════════
-
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:investra/core/styles/colors.dart';
@@ -76,7 +71,6 @@ class _IdeaDetailsScreenState extends State<IdeaDetailsScreen> {
     }
   }
 
-  // ✅ تحديد نوع الوثيقة من الـ URL
   String _docLabel(String url, int index) {
     if (url.contains('bp_')) return 'Business Plan';
     if (url.contains('fs_')) return 'Feasibility Study';
@@ -86,14 +80,17 @@ class _IdeaDetailsScreenState extends State<IdeaDetailsScreen> {
     return 'Document ${index + 1}';
   }
 
-  // ✅ الـ contract لا يُفتح — فقط يُعرض اسمه
   bool _isContract(String url) =>
       url.contains('/contracts/') || url.contains('contract_');
 
   @override
   Widget build(BuildContext context) {
     final String category = widget.idea['category'] ?? 'General';
-    final List<dynamic> docs = widget.idea['idea_docs'] ?? [];
+    final List<String> docs = [
+      widget.idea['business_plan_url'],
+      widget.idea['feasibility_study_url'],
+    ].whereType<String>().toList();
+
     final String description =
         widget.idea['description'] ?? 'No description provided.';
     final String date = widget.idea['created_at'] != null
@@ -138,7 +135,6 @@ class _IdeaDetailsScreenState extends State<IdeaDetailsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // ── العنوان ─────────────────────────────────────────
                   Text(
                     widget.idea['title'] ?? '',
                     style: const TextStyle(
@@ -150,7 +146,6 @@ class _IdeaDetailsScreenState extends State<IdeaDetailsScreen> {
                   ),
                   const SizedBox(height: 4),
 
-                  // ── اسم المؤسس ───────────────────────────────────────
                   FutureBuilder<String>(
                     future: _logic.getEntrepreneurName(
                         widget.idea['entrepreneur_id']?.toString() ?? ''),
@@ -183,10 +178,11 @@ class _IdeaDetailsScreenState extends State<IdeaDetailsScreen> {
                   ),
                   const SizedBox(height: 10),
 
-                  const AiInvestorRatingCard(),
+                  AiInvestorRatingCard(
+                    rating: (widget.idea['ai_rating'] ?? 0).toDouble(),
+                  ),
                   const SizedBox(height: 14),
 
-                  // ── الوصف ────────────────────────────────────────────
                   const Text(
                     'Project Description',
                     style: TextStyle(
@@ -228,7 +224,6 @@ class _IdeaDetailsScreenState extends State<IdeaDetailsScreen> {
                     ],
                   ),
 
-                  // ── الوثائق ──────────────────────────────────────────
                   if (docs.isNotEmpty) ...[
                     const SizedBox(height: 14),
                     const Text(
@@ -241,7 +236,7 @@ class _IdeaDetailsScreenState extends State<IdeaDetailsScreen> {
                     const SizedBox(height: 8),
                     ...docs.asMap().entries.map((entry) {
                       final int index = entry.key;
-                      final String url = entry.value.toString();
+                      final String url = entry.value;
                       final bool isContract = _isContract(url);
                       final String label = _docLabel(url, index);
 
@@ -250,7 +245,6 @@ class _IdeaDetailsScreenState extends State<IdeaDetailsScreen> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 14, vertical: 10),
                         decoration: BoxDecoration(
-                          // ✅ الـ contract له خلفية مختلفة قليلاً
                           color: isContract
                               ? AppColors.primaryColor.withOpacity(0.06)
                               : AppColors.secondary2Color,
@@ -264,7 +258,6 @@ class _IdeaDetailsScreenState extends State<IdeaDetailsScreen> {
                         child: Row(
                           children: [
                             Icon(
-                              // ✅ أيقونة مختلفة للـ contract
                               isContract
                                   ? Icons.gavel_rounded
                                   : Icons.insert_drive_file,
@@ -280,8 +273,6 @@ class _IdeaDetailsScreenState extends State<IdeaDetailsScreen> {
                                     fontSize: 13),
                               ),
                             ),
-                            // ✅ الـ contract: أيقونة قفل بدل check
-                            // الوثائق العادية: check أخضر
                             Icon(
                               isContract
                                   ? Icons.lock_outline

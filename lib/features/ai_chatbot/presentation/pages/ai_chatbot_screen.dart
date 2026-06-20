@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:io';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:file_picker/file_picker.dart';
@@ -6,6 +8,9 @@ import 'package:investra/core/styles/colors.dart';
 import 'package:intl/intl.dart';
 import 'ai_chat_history_screen.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+
+/// Base URL of the Investra AI backend (FastAPI on Railway)
+const String kAiBackendBaseUrl = 'https://investraapp-production.up.railway.app';
 
 class AiChatbotScreen extends StatefulWidget {
   final Function(bool)? onScroll;
@@ -21,12 +26,14 @@ class _AiChatbotScreenState extends State<AiChatbotScreen> {
   final TextEditingController _messageController = TextEditingController();
   final FocusNode _messageFocusNode = FocusNode();
   final _supabase = Supabase.instance.client;
+  final _dio = Dio();
 
   String? _currentSessionId;
   String _userName = "User";
   bool _isLoading = true;
   bool _isMenuOpen = false;
   bool _isSending = false;
+  bool _isAiTyping = false;
 
   File? _selectedFile;
   String? _selectedFileName;
@@ -144,13 +151,75 @@ class _AiChatbotScreenState extends State<AiChatbotScreen> {
         'content': text,
         'file_url': uploadedFileUrl,
         'file_name': fileNameToSend,
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': DateTime.now().toUtc().toIso8601String(),
       });
 
+      if (text.isNotEmpty) {
+        await _requestAiReply(text);
+      }
     } catch (e) {
       debugPrint("Send Error: $e");
     } finally {
       if (mounted) setState(() => _isSending = false);
+    }
+  }
+
+  Future<void> _requestAiReply(String message) async {
+    if (mounted) setState(() => _isAiTyping = true);
+    try {
+      final history = await _fetchRecentHistory();
+
+      await _dio.post(
+        '$kAiBackendBaseUrl/chat',
+        data: FormData.fromMap({
+          'message': message,
+          'history': jsonEncode(history),
+          'session_id': _currentSessionId,
+          'user_id': _supabase.auth.currentUser?.id ?? '',
+        }),
+      );
+    } catch (e) {
+      String errorDetail;
+      if (e is DioException) {
+        errorDetail = "status: ${e.response?.statusCode}\nbody: ${e.response?.data}";
+      } else {
+        errorDetail = e.toString();
+      }
+      debugPrint("AI Reply Error -> $errorDetail");
+
+      try {
+        await _supabase.from('AI_Messages').insert({
+          'session_id': _currentSessionId,
+          'sender_role': 'assistant',
+          'content': "Sorry, I couldn't reach the AI service right now.\n\n[debug] $errorDetail",
+          'created_at': DateTime.now().toIso8601String(),
+        });
+      } catch (_) {}
+    } finally {
+      if (mounted) setState(() => _isAiTyping = false);
+    }
+  }
+
+  Future<List<Map<String, String>>> _fetchRecentHistory() async {
+    if (_currentSessionId == null) return [];
+    try {
+      final rows = await _supabase
+          .from('AI_Messages')
+          .select('sender_role, content')
+          .eq('session_id', _currentSessionId!)
+          .order('created_at', ascending: true)
+          .limit(20);
+
+      return (rows as List)
+          .map((m) => {
+        'role': (m['sender_role'] ?? 'user').toString(),
+        'content': (m['content'] ?? '').toString(),
+      })
+          .where((m) => m['content']!.isNotEmpty)
+          .toList();
+    } catch (e) {
+      debugPrint("History fetch error: $e");
+      return [];
     }
   }
 
@@ -215,14 +284,49 @@ class _AiChatbotScreenState extends State<AiChatbotScreen> {
           return const Center(child: Text("Error loading messages", style: TextStyle(color: AppColors.errorColor)));
         }
         if (!snapshot.hasData) return const SizedBox();
-        final messages = snapshot.data!;
+
+        // --- التعديل هنا: فرز الرسائل يدوياً لضمان الترتيب ---
+        final messages = List<Map<String, dynamic>>.from(snapshot.data!);
+        messages.sort((a, b) {
+          DateTime timeA = DateTime.tryParse(a['created_at']?.toString() ?? '') ?? DateTime.now();
+          DateTime timeB = DateTime.tryParse(b['created_at']?.toString() ?? '') ?? DateTime.now();
+          return timeA.compareTo(timeB);
+        });
+
+        final itemCount = messages.length + (_isAiTyping ? 1 : 0);
 
         return ListView.builder(
           padding: const EdgeInsets.all(16),
-          itemCount: messages.length,
-          itemBuilder: (context, index) => _buildChatBubble(messages[index]),
+          itemCount: itemCount,
+          itemBuilder: (context, index) {
+            if (index < messages.length) {
+              return _buildChatBubble(messages[index]);
+            }
+            return _buildTypingIndicator();
+          },
         );
       },
+    );
+  }
+
+  Widget _buildTypingIndicator() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 15),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: AppColors.secondary1Color,
+            borderRadius: BorderRadius.circular(15),
+          ),
+          child: const SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primaryColor),
+          ),
+        ),
+      ),
     );
   }
 
@@ -231,7 +335,9 @@ class _AiChatbotScreenState extends State<AiChatbotScreen> {
     String time = "";
     try {
       if (msg['created_at'] != null) {
-        time = DateFormat('h:mm a').format(DateTime.parse(msg['created_at']).toLocal());
+        time = DateFormat('h:mm a').format(
+            DateTime.parse(msg['created_at']).toUtc().toLocal()
+        );
       }
     } catch (_) {}
 

@@ -92,6 +92,8 @@ class _EntrepreneurViewBodyState extends State<EntrepreneurViewBody> with Single
                     itemCount: ideas.length,
                     itemBuilder: (context, index) {
                       final idea = ideas[index];
+                      final bool isFunded = idea['status'] == 'funded';
+
                       return Container(
                         margin: const EdgeInsets.only(bottom: 8),
                         decoration: BoxDecoration(
@@ -103,6 +105,24 @@ class _EntrepreneurViewBodyState extends State<EntrepreneurViewBody> with Single
                           leading: const Icon(Icons.lightbulb_outline, color: AppColors.primaryColor),
                           title: Text(idea['title'] ?? 'No Title', style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.blackColor)),
                           subtitle: Text(idea['description'] ?? 'No Description', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: AppColors.grayColor)),
+                          // ✅ بادج يوضح حالة الفكرة (Pending / Funded) بناءً على ideas.status
+                          trailing: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: isFunded
+                                  ? AppColors.green1Color.withOpacity(0.15)
+                                  : AppColors.secondary1Color,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              (idea['status'] ?? 'pending').toString().toUpperCase(),
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: isFunded ? AppColors.green1Color : AppColors.grayColor,
+                              ),
+                            ),
+                          ),
                         ),
                       );
                     },

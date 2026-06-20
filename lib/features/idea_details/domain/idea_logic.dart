@@ -20,14 +20,18 @@ class IdeaLogic {
     }
   }
 
-  // تحديد صورة القسم بناءً على التصنيف
   String getCategoryImage(String category) {
     switch (category.toLowerCase()) {
-      case 'technology': return AppImages.technology_idea;
-      case 'finance': return AppImages.finance;
-      case 'healthcare': return AppImages.medCare;
-      case 'ai': return AppImages.robotIdeaAi;
-      default: return AppImages.technology_idea;
+      case 'technology':
+        return AppImages.technology_idea;
+      case 'finance':
+        return AppImages.finance;
+      case 'healthcare':
+        return AppImages.medCare;
+      case 'ai':
+        return AppImages.robotIdeaAi;
+      default:
+        return AppImages.technology_idea;
     }
   }
 
@@ -45,7 +49,6 @@ class IdeaLogic {
           ? 'Chat Request for: $ideaTitle'
           : 'Investment Interest in: $ideaTitle';
 
-
       await _supabase.from('requests').insert({
         'idea_id': ideaId,
         'sender_id': myId,
@@ -58,6 +61,34 @@ class IdeaLogic {
     } catch (e) {
       print("Submit Error Details: $e");
       rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>?> getIdeaById(String ideaId) async {
+    try {
+      return await _supabase
+          .from('ideas')
+          .select()
+          .eq('id', ideaId)
+          .maybeSingle();
+    } catch (e) {
+      print("Error fetching idea: $e");
+      return null;
+    }
+  }
+
+
+  Future<String?> getInvestorIdFromRequest(String requestId) async {
+    try {
+      final data = await _supabase
+          .from('requests')
+          .select('sender_id')
+          .eq('id', requestId)
+          .maybeSingle();
+      return data?['sender_id']?.toString();
+    } catch (e) {
+      print("Error fetching investor id: $e");
+      return null;
     }
   }
 }

@@ -23,81 +23,71 @@ class BuildIdeaCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         color: AppColors.bgColor,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.secondary1Color),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.02),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+          // العنوان والوصف
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.blackColor),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
+                const SizedBox(height: 2),
+                Text(description,
+                    style: const TextStyle(
+                        fontSize: 12, color: AppColors.grayColor),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
+                const SizedBox(height: 6),
+                Row(
                   children: [
-                    Text(title,
-                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.blackColor),
-                        maxLines: 1, overflow: TextOverflow.ellipsis),
-                    const SizedBox(height: 2),
-                    Text(description,
-                        style: const TextStyle(fontSize: 13, color: AppColors.grayColor),
-                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    const Icon(Icons.visibility_outlined,
+                        size: 13, color: AppColors.gray2Color),
+                    const SizedBox(width: 4),
+                    Text('$views views',
+                        style: const TextStyle(
+                            fontSize: 12, color: AppColors.gray2Color)),
+                    const SizedBox(width: 12),
+                    const Icon(Icons.chat_bubble_outline,
+                        size: 13, color: AppColors.gray2Color),
+                    const SizedBox(width: 4),
+                    Text('$activeInquiries inquiries',
+                        style: const TextStyle(
+                            fontSize: 12, color: AppColors.gray2Color)),
                   ],
                 ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(color: AppColors.lightgreen, borderRadius: BorderRadius.circular(20)),
-                child: Row(
-                  children: [
-                    const Icon(Icons.bolt, size: 14, color: AppColors.green1Color),
-                    Text('$aiScore AI Score',
-                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.green1Color)),
-                  ],
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
-          const SizedBox(height: 16),
-          const Divider(height: 1, color: AppColors.secondary2Color),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              _stat('TOTAL VIEWS', views, viewTrend, true),
-              _stat('INVESTOR INQUIRIES', '$activeInquiries Active', '', false),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _stat(String label, String val, String trend, bool isTrend) {
-    return Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: const TextStyle(fontSize: 10, color: AppColors.gray2Color, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              Text(val, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.blackColor)),
-              if (isTrend) ...[
-                const SizedBox(width: 4),
-                Text(trend, style: const TextStyle(fontSize: 12, color: AppColors.green1Color, fontWeight: FontWeight.bold)),
-              ]
-            ],
+          const SizedBox(width: 8),
+          // AI Score badge
+          Container(
+            padding:
+            const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+                color: AppColors.lightgreen,
+                borderRadius: BorderRadius.circular(20)),
+            child: Row(
+              children: [
+                const Icon(Icons.bolt, size: 13, color: AppColors.green1Color),
+                Text('$aiScore',
+                    style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.green1Color)),
+              ],
+            ),
           ),
         ],
       ),

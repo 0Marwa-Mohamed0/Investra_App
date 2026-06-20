@@ -1,11 +1,11 @@
-/// Single line in a thread (outgoing = current user).
 class ChatMessage {
   const ChatMessage({
     required this.id,
     required this.text,
     required this.isFromUser,
     required this.timeLabel,
-    this.isRead = true,
+    required this.isRead,
+    this.messageType = 'text',
   });
 
   final String id;
@@ -13,14 +13,7 @@ class ChatMessage {
   final bool isFromUser;
   final String timeLabel;
   final bool isRead;
+  final String messageType;
 
-  ChatMessage copyWith({bool? isRead}) {
-    return ChatMessage(
-      id: id,
-      text: text,
-      isFromUser: isFromUser,
-      timeLabel: timeLabel,
-      isRead: isRead ?? this.isRead,
-    );
-  }
+  bool get isNda => messageType == 'nda';
 }
