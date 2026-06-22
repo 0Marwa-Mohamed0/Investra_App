@@ -30,6 +30,21 @@ class EntrepreneurHomeScreen extends StatelessWidget {
     }
   }
 
+  Future<String> getInvestorName(String investorId) async {
+    if (investorId.isEmpty) return 'Investor';
+    try {
+      final supabase = Supabase.instance.client;
+      final data = await supabase
+          .from('User')
+          .select('FullName')
+          .eq('userid', investorId)
+          .maybeSingle();
+      return data?['FullName']?.toString() ?? 'Investor';
+    } catch (e) {
+      return 'Investor';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final supabase = Supabase.instance.client;
@@ -163,21 +178,25 @@ class EntrepreneurHomeScreen extends StatelessWidget {
 
             return Padding(
               padding: const EdgeInsets.only(bottom: 10),
-              child: BuildChatRequest(
-                name: 'Investor Inquiry',
-                company: req['content'] ?? 'Interested in your idea',
-                icon: Icons.chat_bubble_outline,
-                onAcceptTap: () => _processAccept(
-                  supabase,
-                  requestId,
-                  userId,
-                  investorId,
-                  ideaId,
-                  context,
-                ),
-
-                onDeclineTap: () =>
-                    _processDecline(supabase, requestId, context),
+              child: FutureBuilder<String>(
+                future: getInvestorName(investorId),
+                builder: (context, nameSnapshot) {
+                  return BuildChatRequest(
+                    name: nameSnapshot.data ?? 'Investor',
+                    company: req['content'] ?? 'Interested in your idea',
+                    icon: Icons.chat_bubble_outline,
+                    onAcceptTap: () => _processAccept(
+                      supabase,
+                      requestId,
+                      userId,
+                      investorId,
+                      ideaId,
+                      context,
+                    ),
+                    onDeclineTap: () =>
+                        _processDecline(supabase, requestId, context),
+                  );
+                },
               ),
             );
           }).toList(),

@@ -1,8 +1,12 @@
+import 'dart:io';
+
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:investra/core/constants/app_images.dart';
 import 'package:investra/core/styles/colors.dart';
 import 'package:investra/core/widgets/custom_svg_picture.dart';
 import 'package:investra/features/messages/domain/entities/chat_message.dart';
+import 'package:open_filex/open_filex.dart';
 
 class ChatBubble extends StatelessWidget {
   const ChatBubble({
@@ -425,7 +429,7 @@ class _ImageBubble extends StatelessWidget {
 // DOCUMENT BUBBLE
 // ═══════════════════════════════════════════════════════════════════════════
 
-class _DocumentBubble extends StatelessWidget {
+class _DocumentBubble extends StatefulWidget {
   const _DocumentBubble({
     required this.message,
     required this.showPeerAvatar,
@@ -438,14 +442,62 @@ class _DocumentBubble extends StatelessWidget {
   final String? peerAvatarUrl;
   final String? peerInitial;
 
+  @override
+  State<_DocumentBubble> createState() => _DocumentBubbleState();
+}
+
+class _DocumentBubbleState extends State<_DocumentBubble> {
+  static final _dio = Dio();
+  bool _isOpening = false;
+
+  ChatMessage get message => widget.message;
+
   String get _fileName {
     try {
       final uri = Uri.parse(message.text);
       final raw = uri.pathSegments.last;
-      // اشيل الـ timestamp من أول الاسم (مثلاً 1777930282671_roadmap.pdf)
       return raw.replaceAll(RegExp(r'^\d+_'), '');
     } catch (_) {
       return 'Document';
+    }
+  }
+
+  String _extensionFromUrl(String url) {
+    final path = Uri.tryParse(url)?.path ?? url;
+    final dot = path.lastIndexOf('.');
+    if (dot != -1 && dot < path.length - 1) {
+      return path.substring(dot);
+    }
+    return '.pdf';
+  }
+
+  Future<void> _openDocument() async {
+    if (_isOpening) return;
+    final url = message.text.trim();
+    if (url.isEmpty) return;
+
+    setState(() => _isOpening = true);
+
+    try {
+      final ext = _extensionFromUrl(url);
+      final savePath =
+          '${Directory.systemTemp.path}/investra_chat_${DateTime.now().millisecondsSinceEpoch}$ext';
+      await _dio.download(url, savePath);
+
+      final result = await OpenFilex.open(savePath);
+      if (result.type != ResultType.done && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result.message)),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not open file: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isOpening = false);
     }
   }
 
@@ -460,47 +512,71 @@ class _DocumentBubble extends StatelessWidget {
       ),
       child: Column(
         crossAxisAlignment:
-        isOutgoing ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+            isOutgoing ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
-          Container(
-            padding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            decoration: BoxDecoration(
-              color: isOutgoing
-                  ? AppColors.primaryColor
-                  : AppColors.secondary1Color,
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: _isOpening ? null : _openDocument,
               borderRadius: BorderRadius.only(
                 topLeft: const Radius.circular(16),
                 topRight: const Radius.circular(16),
                 bottomLeft: Radius.circular(isOutgoing ? 16 : 4),
                 bottomRight: Radius.circular(isOutgoing ? 4 : 16),
               ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.insert_drive_file_outlined,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
                   color: isOutgoing
-                      ? Colors.white70
-                      : AppColors.primaryColor,
-                  size: 22,
-                ),
-                const SizedBox(width: 10),
-                Flexible(
-                  child: Text(
-                    _fileName,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: isOutgoing
-                          ? Colors.white
-                          : AppColors.blackColor,
-                      fontWeight: FontWeight.w600,
-                    ),
+                      ? AppColors.primaryColor
+                      : AppColors.secondary1Color,
+                  borderRadius: BorderRadius.only(
+                    topLeft: const Radius.circular(16),
+                    topRight: const Radius.circular(16),
+                    bottomLeft: Radius.circular(isOutgoing ? 16 : 4),
+                    bottomRight: Radius.circular(isOutgoing ? 4 : 16),
                   ),
                 ),
-              ],
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_isOpening)
+                      SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: isOutgoing
+                              ? Colors.white70
+                              : AppColors.primaryColor,
+                        ),
+                      )
+                    else
+                      Icon(
+                        Icons.insert_drive_file_outlined,
+                        color: isOutgoing
+                            ? Colors.white70
+                            : AppColors.primaryColor,
+                        size: 22,
+                      ),
+                    const SizedBox(width: 10),
+                    Flexible(
+                      child: Text(
+                        _fileName,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: isOutgoing
+                              ? Colors.white
+                              : AppColors.blackColor,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
           const SizedBox(height: 4),
@@ -529,8 +605,11 @@ class _DocumentBubble extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          if (showPeerAvatar) ...[
-            _SmallAvatar(avatarUrl: peerAvatarUrl, label: peerInitial),
+          if (widget.showPeerAvatar) ...[
+            _SmallAvatar(
+              avatarUrl: widget.peerAvatarUrl,
+              label: widget.peerInitial,
+            ),
             const SizedBox(width: 8),
           ] else
             const SizedBox(width: 36),

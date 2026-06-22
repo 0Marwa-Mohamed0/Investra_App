@@ -65,7 +65,9 @@ abstract class AppImages {
   static const String technology_idea= 'assets/images/conny-schneider-xuTJZ7uD7PI-unsplash.jpg';
 
 
-
+//finalsss
+  static const String small_logo= 'assets/images/small_logo.png';
+  static const String big_logo= 'assets/images/big_logo';
 
 }
 
@@ -298,7 +300,9 @@ class AiMessage {
 ``n
 ### File: D:\FlutterProjects\Investra_App\lib\features\ai_chatbot\presentation\pages\ai_chatbot_screen.dart
 `dart
+import 'dart:convert';
 import 'dart:io';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:file_picker/file_picker.dart';
@@ -306,6 +310,9 @@ import 'package:investra/core/styles/colors.dart';
 import 'package:intl/intl.dart';
 import 'ai_chat_history_screen.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+
+/// Base URL of the Investra AI backend (FastAPI on Railway)
+const String kAiBackendBaseUrl = 'https://investraapp-production.up.railway.app';
 
 class AiChatbotScreen extends StatefulWidget {
   final Function(bool)? onScroll;
@@ -321,12 +328,14 @@ class _AiChatbotScreenState extends State<AiChatbotScreen> {
   final TextEditingController _messageController = TextEditingController();
   final FocusNode _messageFocusNode = FocusNode();
   final _supabase = Supabase.instance.client;
+  final _dio = Dio();
 
   String? _currentSessionId;
   String _userName = "User";
   bool _isLoading = true;
   bool _isMenuOpen = false;
   bool _isSending = false;
+  bool _isAiTyping = false;
 
   File? _selectedFile;
   String? _selectedFileName;
@@ -444,13 +453,75 @@ class _AiChatbotScreenState extends State<AiChatbotScreen> {
         'content': text,
         'file_url': uploadedFileUrl,
         'file_name': fileNameToSend,
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': DateTime.now().toUtc().toIso8601String(),
       });
 
+      if (text.isNotEmpty) {
+        await _requestAiReply(text);
+      }
     } catch (e) {
       debugPrint("Send Error: $e");
     } finally {
       if (mounted) setState(() => _isSending = false);
+    }
+  }
+
+  Future<void> _requestAiReply(String message) async {
+    if (mounted) setState(() => _isAiTyping = true);
+    try {
+      final history = await _fetchRecentHistory();
+
+      await _dio.post(
+        '$kAiBackendBaseUrl/chat',
+        data: FormData.fromMap({
+          'message': message,
+          'history': jsonEncode(history),
+          'session_id': _currentSessionId,
+          'user_id': _supabase.auth.currentUser?.id ?? '',
+        }),
+      );
+    } catch (e) {
+      String errorDetail;
+      if (e is DioException) {
+        errorDetail = "status: ${e.response?.statusCode}\nbody: ${e.response?.data}";
+      } else {
+        errorDetail = e.toString();
+      }
+      debugPrint("AI Reply Error -> $errorDetail");
+
+      try {
+        await _supabase.from('AI_Messages').insert({
+          'session_id': _currentSessionId,
+          'sender_role': 'assistant',
+          'content': "Sorry, I couldn't reach the AI service right now.\n\n[debug] $errorDetail",
+          'created_at': DateTime.now().toIso8601String(),
+        });
+      } catch (_) {}
+    } finally {
+      if (mounted) setState(() => _isAiTyping = false);
+    }
+  }
+
+  Future<List<Map<String, String>>> _fetchRecentHistory() async {
+    if (_currentSessionId == null) return [];
+    try {
+      final rows = await _supabase
+          .from('AI_Messages')
+          .select('sender_role, content')
+          .eq('session_id', _currentSessionId!)
+          .order('created_at', ascending: true)
+          .limit(20);
+
+      return (rows as List)
+          .map((m) => {
+        'role': (m['sender_role'] ?? 'user').toString(),
+        'content': (m['content'] ?? '').toString(),
+      })
+          .where((m) => m['content']!.isNotEmpty)
+          .toList();
+    } catch (e) {
+      debugPrint("History fetch error: $e");
+      return [];
     }
   }
 
@@ -515,14 +586,49 @@ class _AiChatbotScreenState extends State<AiChatbotScreen> {
           return const Center(child: Text("Error loading messages", style: TextStyle(color: AppColors.errorColor)));
         }
         if (!snapshot.hasData) return const SizedBox();
-        final messages = snapshot.data!;
+
+        // --- Ø§Ù„ØªØ¹Ø¯ÙŠÙ„ Ù‡Ù†Ø§: ÙØ±Ø² Ø§Ù„Ø±Ø³Ø§Ø¦Ù„ ÙŠØ¯ÙˆÙŠØ§Ù‹ Ù„Ø¶Ù…Ø§Ù† Ø§Ù„ØªØ±ØªÙŠØ¨ ---
+        final messages = List<Map<String, dynamic>>.from(snapshot.data!);
+        messages.sort((a, b) {
+          DateTime timeA = DateTime.tryParse(a['created_at']?.toString() ?? '') ?? DateTime.now();
+          DateTime timeB = DateTime.tryParse(b['created_at']?.toString() ?? '') ?? DateTime.now();
+          return timeA.compareTo(timeB);
+        });
+
+        final itemCount = messages.length + (_isAiTyping ? 1 : 0);
 
         return ListView.builder(
           padding: const EdgeInsets.all(16),
-          itemCount: messages.length,
-          itemBuilder: (context, index) => _buildChatBubble(messages[index]),
+          itemCount: itemCount,
+          itemBuilder: (context, index) {
+            if (index < messages.length) {
+              return _buildChatBubble(messages[index]);
+            }
+            return _buildTypingIndicator();
+          },
         );
       },
+    );
+  }
+
+  Widget _buildTypingIndicator() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 15),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: AppColors.secondary1Color,
+            borderRadius: BorderRadius.circular(15),
+          ),
+          child: const SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primaryColor),
+          ),
+        ),
+      ),
     );
   }
 
@@ -531,7 +637,9 @@ class _AiChatbotScreenState extends State<AiChatbotScreen> {
     String time = "";
     try {
       if (msg['created_at'] != null) {
-        time = DateFormat('h:mm a').format(DateTime.parse(msg['created_at']).toLocal());
+        time = DateFormat('h:mm a').format(
+            DateTime.parse(msg['created_at']).toUtc().toLocal()
+        );
       }
     } catch (_) {}
 
@@ -692,16 +800,17 @@ class _AiChatbotScreenState extends State<AiChatbotScreen> {
   }
 }
 
-
 ``n
 ### File: D:\FlutterProjects\Investra_App\lib\features\ai_chatbot\presentation\pages\ai_chat_history_screen.dart
 `dart
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:dio/dio.dart';
 import 'package:investra/core/styles/colors.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:investra/features/ai_chatbot/data/models/ai_chat_model.dart';
+import 'ai_chatbot_screen.dart' show kAiBackendBaseUrl;
 
 class AiChatHistoryScreen extends StatefulWidget {
   const AiChatHistoryScreen({super.key});
@@ -712,6 +821,7 @@ class AiChatHistoryScreen extends StatefulWidget {
 
 class _AiChatHistoryScreenState extends State<AiChatHistoryScreen> {
   final _supabase = Supabase.instance.client;
+  final _dio = Dio();
 
   List<AiSession> _allSessions = [];
   List<AiSession> _filteredSessions = [];
@@ -742,17 +852,62 @@ class _AiChatHistoryScreenState extends State<AiChatHistoryScreen> {
           .eq('user_id', user.id)
           .order('created_at', ascending: false);
 
+      final sessions =
+      (data as List).map((json) => AiSession.fromJson(json)).toList();
+
       if (mounted) {
         setState(() {
-          _allSessions = (data as List).map((json) => AiSession.fromJson(json)).toList();
+          _allSessions = sessions;
           _filteredSessions = _allSessions;
           _isLoading = false;
         });
       }
+
+      // After showing the list, lazily generate smart titles for any
+      // sessions that still have the default "Chat <date/time>" title
+      // and already have at least one AI reply to base a title on.
+      _generateMissingTitles(sessions);
     } catch (e) {
       debugPrint("History Error: $e");
       if (mounted) {
         setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _generateMissingTitles(List<AiSession> sessions) async {
+    for (final session in sessions) {
+      final hasDefaultTitle = session.title.startsWith('Chat ');
+      final hasReply = session.lastMessageSnippet != null &&
+          session.lastMessageSnippet!.trim().isNotEmpty;
+
+      if (!hasDefaultTitle || !hasReply) continue;
+
+      try {
+        final response = await _dio.post(
+          '$kAiBackendBaseUrl/generate-title',
+          data: FormData.fromMap({'session_id': session.sessionId}),
+        );
+
+        final newTitle = response.data is Map ? response.data['title'] : null;
+        if (newTitle == null || newTitle is! String || !mounted) continue;
+
+        setState(() {
+          _allSessions = _allSessions
+              .map((s) => s.sessionId == session.sessionId
+              ? AiSession(
+            sessionId: s.sessionId,
+            userId: s.userId,
+            title: newTitle,
+            lastMessageSnippet: s.lastMessageSnippet,
+            createdAt: s.createdAt,
+          )
+              : s)
+              .toList();
+          _filterChats();
+        });
+      } catch (e) {
+        debugPrint("Title gen error for ${session.sessionId}: $e");
       }
     }
   }
@@ -889,7 +1044,6 @@ class _AiChatHistoryScreenState extends State<AiChatHistoryScreen> {
   }
 }
 
-
 ``n
 ### File: D:\FlutterProjects\Investra_App\lib\features\auth\data\services\auth_service.dart
 `dart
@@ -898,7 +1052,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class AuthService {
   final SupabaseClient _supabase = Supabase.instance.client;
 
-  // ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø¯Ø®ÙˆÙ„ Ø§Ù„Ø¹Ø§Ø¯ÙŠ Ø¨Ø§Ù„Ø¨Ø±ÙŠØ¯ ÙˆÙƒÙ„Ù…Ø© Ø§Ù„Ø³Ø±
   Future<AuthResponse> login(String email, String password) async {
     return await _supabase.auth.signInWithPassword(
       email: email,
@@ -906,7 +1059,6 @@ class AuthService {
     );
   }
 
-  // ØªØ­Ø¯ÙŠØ« Ø§Ù„Ø¬Ù„Ø³Ø© ÙˆØ¬Ù„Ø¨ Ø§Ù„Ù€ Role Ø¥Ù† ÙˆØ¬Ø¯
   Future<String> updateUserSessionAndGetRole(String userId) async {
     await _supabase
         .from('User')
@@ -931,7 +1083,6 @@ class AuthService {
     return data['role'] ?? 'Unknown';
   }
 
-  // ÙØ­Øµ Ù‡Ù„ Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… Ù„Ù‡ Ø³Ø¬Ù„ ÙÙŠ Ø¬Ø¯ÙˆÙ„ User Ø£Ù… Ø£Ù†Ù‡ Ù…Ø³ØªØ®Ø¯Ù… Ø¬ÙˆØ¬Ù„ Ø¬Ø¯ÙŠØ¯
   Future<Map<String, dynamic>?> checkUserRecord(String userId) async {
     return await _supabase
         .from('User')
@@ -940,7 +1091,6 @@ class AuthService {
         .maybeSingle();
   }
 
-  // Ø¥Ù†Ø´Ø§Ø¡ Ø£Ùˆ ØªØ­Ø¯ÙŠØ« Ø³Ø¬Ù„ Ù„Ù„Ù…Ø³ØªØ®Ø¯Ù… Ø§Ù„Ø¬Ø¯ÙŠØ¯ Ø§Ù„Ù‚Ø§Ø¯Ù… Ù…Ù† Ø¬ÙˆØ¬Ù„ (ØªØ¹Ø¯ÙŠÙ„ Ù„Ù„Ù€ upsert)
   Future<void> createUserRecord({
     required String userId,
     required String email,
@@ -956,7 +1106,6 @@ class AuthService {
     });
   }
 
-  // Ø§Ù„ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø¹Ø§Ø¯ÙŠ
   Future<AuthResponse> signUp({
     required String email,
     required String password,
@@ -1123,6 +1272,7 @@ import 'package:investra/core/styles/colors.dart';
 import 'register_screen.dart';
 import 'forgot_password_screen.dart';
 import 'role_selection_screen.dart';
+import 'package:investra/features/onboarding/presentation/pages/onboarding_screen.dart';
 import '../widgets/auth_text_field.dart';
 import '../widgets/social_auth_button.dart';
 import 'package:investra/features/main_app/presentation/pages/main_app_entrepreneur_screen.dart';
@@ -1146,7 +1296,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
-    // Ù…Ø±Ø§Ù‚Ø¨Ø© Ø§Ù„Ø¯Ø®ÙˆÙ„ Ø§Ù„Ø°ÙƒÙŠ Ù„Ù„Ù€ OAuth (Ø¬ÙˆØ¬Ù„ ÙˆÙ„ÙŠÙ†ÙƒØ¯ Ø¥Ù†)
+    // Ù…Ø±Ø§Ù‚Ø¨Ø© Ø§Ù„Ø¯Ø®ÙˆÙ„ Ø§Ù„Ø°ÙƒÙŠ Ù„Ù„Ù€ OAuth (Ø¬ÙˆØ¬Ù„)
     _authSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((data) async {
       final session = data.session;
       if (session != null && data.event == AuthChangeEvent.signedIn) {
@@ -1237,7 +1387,15 @@ class _LoginScreenState extends State<LoginScreen> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        leading: const BackButton(color: AppColors.blackColor),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: AppColors.blackColor),
+          onPressed: () {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => const OnboardingScreen()),
+            );
+          },
+        ),
         title: const Text(
           "Investra",
           style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppColors.primaryColor),
@@ -1314,12 +1472,10 @@ class _LoginScreenState extends State<LoginScreen> {
                 ],
               ),
               const Gap(24),
-              Row(
-                children: [
-                  Expanded(child: SocialAuthButton(label: "Google", iconPath: 'assets/icons/google_svg.svg', onPressed: () => _authService.signInWithOAuth(OAuthProvider.google))),
-                  const Gap(16),
-                  Expanded(child: SocialAuthButton(label: "LinkedIn", iconPath: 'assets/icons/Linkedin.svg', onPressed: () => _authService.signInWithOAuth(OAuthProvider.linkedin))),
-                ],
+              SocialAuthButton(
+                label: "Continue with Google",
+                iconPath: 'assets/icons/google_svg.svg',
+                onPressed: () => _authService.signInWithOAuth(OAuthProvider.google),
               ),
               const Gap(40),
               Row(
@@ -1352,6 +1508,7 @@ import 'package:investra/core/styles/colors.dart';
 import '../../data/services/auth_service.dart';
 import 'login_screen.dart';
 import 'role_selection_screen.dart';
+import 'package:investra/features/onboarding/presentation/pages/onboarding_screen.dart';
 import '../widgets/auth_text_field.dart';
 import '../widgets/social_auth_button.dart';
 import '../widgets/account_type_toggle.dart';
@@ -1483,7 +1640,15 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        leading: const BackButton(color: AppColors.blackColor),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: AppColors.blackColor),
+          onPressed: () {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => const OnboardingScreen()),
+            );
+          },
+        ),
         title: const Text("Create Account", style: TextStyle(color: AppColors.primaryColor, fontWeight: FontWeight.bold, fontSize: 18)),
         centerTitle: true,
       ),
@@ -1587,13 +1752,11 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
           Expanded(child: Divider(color: AppColors.bgGray)),
         ],
       ),
-      const Gap(12),
-      Row(
-        children: [
-          Expanded(child: SocialAuthButton(label: "Google", iconPath: 'assets/icons/google_svg.svg', onPressed: () => _authService.signInWithOAuth(OAuthProvider.google))),
-          const Gap(16),
-          Expanded(child: SocialAuthButton(label: "LinkedIn", iconPath: 'assets/icons/Linkedin.svg', onPressed: () => _authService.signInWithOAuth(OAuthProvider.linkedin))),
-        ],
+      const Gap(15),
+      SocialAuthButton(
+        label: "Continue with Google",
+        iconPath: 'assets/icons/google_svg.svg',
+        onPressed: () => _authService.signInWithOAuth(OAuthProvider.google),
       ),
     ],
   );
@@ -2018,7 +2181,7 @@ class HelpSupportScreen extends StatelessWidget {
             _buildContactOption(
               icon: Icons.phone_outlined,
               title: "Phone",
-              trailingText: "+20 123 456 789",
+              trailingText: "+201007410619",
             ),
 
             const SizedBox(height: 30),
@@ -2109,8 +2272,6 @@ import 'package:investra/features/home/presentation/widgets/build_submit_button.
 import 'package:investra/features/notifications/presentation/pages/notifications_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// Ø§Ù„ØµÙØ­Ø© Ø§Ù„Ø±Ø¦ÙŠØ³ÙŠØ© Ù„Ù„Ù…Ø¤Ø³Ø³ (Entrepreneur Home).
-/// ØªØ¹Ø±Ø¶ Ø§Ù„Ø£ÙÙƒØ§Ø± Ø§Ù„Ù†Ø´Ø·Ø© ÙˆØ·Ù„Ø¨Ø§Øª Ø§Ù„Ù…Ø­Ø§Ø¯Ø«Ø© â€” Ø§Ù„Ø¶ØºØ· Ø¹Ù„Ù‰ Ø¨Ø·Ø§Ù‚Ø© ÙÙƒØ±Ø© ÙŠÙØªØ­ Ø´Ø§Ø´Ø© Ø§Ù„ØªÙØ§ØµÙŠÙ„.
 class EntrepreneurHomeScreen extends StatelessWidget {
   final ScrollController? scrollController;
 
@@ -2162,8 +2323,7 @@ class EntrepreneurHomeScreen extends StatelessWidget {
           child: StreamBuilder<List<Map<String, dynamic>>>(
             stream: supabase
                 .from('ideas')
-                .stream(primaryKey: ['id'])
-                .eq('entrepreneur_id', userId),
+                .stream(primaryKey: ['id']).eq('entrepreneur_id', userId),
             builder: (context, snapshot) {
               final ideasList = snapshot.data ?? [];
               final int count = ideasList.length;
@@ -2174,28 +2334,30 @@ class EntrepreneurHomeScreen extends StatelessWidget {
                 children: [
                   _buildHeader(userId),
                   const SizedBox(height: 24),
+                  // âœ… Ø§Ù„Ù€ submission card ÙŠØ¹Ø±Ø¶ Ø§Ù„Ù€ limit ØªÙ„Ù‚Ø§Ø¦ÙŠØ§Ù‹
                   BuildSubmissionCard(
                     currentCount: count,
                     maxLimit: 2,
                     remainingSlots: (2 - count).clamp(0, 2),
                   ),
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 24),
                   const BuildSectionHeader(
                     title: 'Your Active Ideas',
                     action: '',
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   _buildIdeaSection(context, ideasList),
-                  const SizedBox(height: 16),
-                  reachedLimit
-                      ? _buildLimitReachedMessage()
-                      : const BuildSubmitButton(),
-                  const SizedBox(height: 32),
+                  // âœ… Ø²Ø± Submit Ø¨Ø³ Ø¥Ø°Ø§ Ù…Ø§ ÙˆØµÙ„ Ø§Ù„Ù€ limit â€” Ø¨Ø¯ÙˆÙ† Ø±Ø³Ø§Ù„Ø© Ø¥Ø¶Ø§ÙÙŠØ©
+                  if (!reachedLimit) ...[
+                    const SizedBox(height: 12),
+                    const BuildSubmitButton(),
+                  ],
+                  const SizedBox(height: 24),
                   const BuildSectionHeader(
                     title: 'Recent Chat Requests',
                     action: '',
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   _buildChatRequestsStream(supabase, userId),
                   const SizedBox(height: 80),
                 ],
@@ -2236,8 +2398,7 @@ class EntrepreneurHomeScreen extends StatelessWidget {
     return StreamBuilder<List<Map<String, dynamic>>>(
       stream: supabase
           .from('requests')
-          .stream(primaryKey: ['id'])
-          .eq('receiver_id', userId),
+          .stream(primaryKey: ['id']).eq('receiver_id', userId),
       builder: (context, snapshot) {
         if (!snapshot.hasData || snapshot.data!.isEmpty) {
           return _buildEmptyState('No requests found.');
@@ -2247,7 +2408,6 @@ class EntrepreneurHomeScreen extends StatelessWidget {
           final isPending = req['status'] == 'pending';
           final content = (req['content'] ?? '').toString().toLowerCase();
           final isInvestment = content.contains('investment') ||
-              content.contains('invest') ||
               req['type'] == 'invest';
           return isPending && !isInvestment;
         }).take(3).toList();
@@ -2276,6 +2436,7 @@ class EntrepreneurHomeScreen extends StatelessWidget {
                   ideaId,
                   context,
                 ),
+
                 onDeclineTap: () =>
                     _processDecline(supabase, requestId, context),
               ),
@@ -2287,18 +2448,17 @@ class EntrepreneurHomeScreen extends StatelessWidget {
   }
 
   Future<void> _processAccept(
-    SupabaseClient supabase,
-    String requestId,
-    String userId,
-    String investorId,
-    String? ideaId,
-    BuildContext context,
-  ) async {
+      SupabaseClient supabase,
+      String requestId,
+      String userId,
+      String investorId,
+      String? ideaId,
+      BuildContext context,
+      ) async {
     try {
       await supabase
           .from('requests')
-          .update({'status': 'accepted'})
-          .eq('id', requestId);
+          .update({'status': 'accepted'}).eq('id', requestId);
 
       if (ideaId != null) {
         final existingChat = await supabase
@@ -2321,7 +2481,7 @@ class EntrepreneurHomeScreen extends StatelessWidget {
           'user_id': investorId,
           'title': 'Request Accepted! ðŸŽ‰',
           'content':
-              'Your request has been accepted. You can start chatting now!',
+          'Your request has been accepted. You can start chatting now!',
           'type': 'chat_accepted',
           'is_read': false,
           'idea_id': ideaId,
@@ -2331,9 +2491,7 @@ class EntrepreneurHomeScreen extends StatelessWidget {
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Chat created! Connection established.'),
-          ),
+          const SnackBar(content: Text('Chat created! Connection established.')),
         );
       }
     } catch (e) {
@@ -2342,15 +2500,14 @@ class EntrepreneurHomeScreen extends StatelessWidget {
   }
 
   Future<void> _processDecline(
-    SupabaseClient supabase,
-    String requestId,
-    BuildContext context,
-  ) async {
+      SupabaseClient supabase,
+      String requestId,
+      BuildContext context,
+      ) async {
     try {
       await supabase
           .from('requests')
-          .update({'status': 'declined'})
-          .eq('id', requestId);
+          .update({'status': 'rejected'}).eq('id', requestId);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Request declined.')),
@@ -2362,9 +2519,9 @@ class EntrepreneurHomeScreen extends StatelessWidget {
   }
 
   Widget _buildIdeaSection(
-    BuildContext context,
-    List<Map<String, dynamic>> ideasList,
-  ) {
+      BuildContext context,
+      List<Map<String, dynamic>> ideasList,
+      ) {
     if (ideasList.isEmpty) {
       return _buildEmptyState('No ideas posted yet.');
     }
@@ -2381,7 +2538,7 @@ class EntrepreneurHomeScreen extends StatelessWidget {
     return Column(
       children: ideasList.map((idea) {
         return Padding(
-          padding: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.only(bottom: 10),
           child: GestureDetector(
             onTap: () async {
               await Navigator.push(
@@ -2410,8 +2567,7 @@ class EntrepreneurHomeScreen extends StatelessWidget {
     return StreamBuilder<List<Map<String, dynamic>>>(
       stream: supabase
           .from('notifications')
-          .stream(primaryKey: ['id'])
-          .eq('user_id', userId),
+          .stream(primaryKey: ['id']).eq('user_id', userId),
       builder: (context, snapshot) {
         final hasUnread = snapshot.data?.any((n) => !n['is_read']) ?? false;
         return IconButton(
@@ -2450,33 +2606,6 @@ class EntrepreneurHomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildLimitReachedMessage() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.bgColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.secondary1Color),
-      ),
-      child: const Row(
-        children: [
-          Icon(Icons.info_outline, color: AppColors.primaryColor),
-          SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              'Limit reached (2/2 ideas).',
-              style: TextStyle(
-                color: AppColors.blackColor,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildEmptyState(String msg) {
     return Container(
       width: double.infinity,
@@ -2496,10 +2625,14 @@ class EntrepreneurHomeScreen extends StatelessWidget {
   }
 }
 
-
 ``n
 ### File: D:\FlutterProjects\Investra_App\lib\features\home\presentation\pages\entrepreneur_idea_details_screen.dart
 `dart
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ðŸ“ Ø§Ù„Ù…Ø³Ø§Ø±: lib/features/home/presentation/pages/entrepreneur_idea_details_screen.dart
+// â„¹ï¸  Ø§Ø³ØªØ¨Ø¯Ù„ Ø§Ù„Ù…Ù„Ù Ø§Ù„Ù‚Ø¯ÙŠÙ… Ø¨Ù‡Ø°Ø§ Ø§Ù„Ù…Ù„Ù Ø¨Ø§Ù„ÙƒØ§Ù…Ù„
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -2512,13 +2645,20 @@ import 'package:investra/features/notifications/presentation/pages/notifications
 import 'package:open_filex/open_filex.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// Ø´Ø§Ø´Ø© ØªÙØ§ØµÙŠÙ„ Ø§Ù„ÙÙƒØ±Ø© Ù„Ù„Ù…Ø¤Ø³Ø³ (Entrepreneur).
 class EntrepreneurIdeaDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> ideaData;
+
+  // âœ… ÙŠØªÙ… ØªÙ…Ø±ÙŠØ±Ù‡Ù… ÙÙ‚Ø· Ù„Ù…Ø§ Ø§Ù„Ø´Ø§Ø´Ø© Ø¨ØªÙÙØªØ­ Ù…Ù† Ø¥Ø´Ø¹Ø§Ø± Ø§Ø³ØªØ«Ù…Ø§Ø±:
+  // investorId = Ù‡ÙˆÙŠØ© Ø§Ù„Ù…Ø³ØªØ«Ù…Ø± Ø§Ù„Ù„ÙŠ Ù‚Ø¯Ù‘Ù… Ø§Ù„Ø·Ù„Ø¨ (sender_id Ù…Ù† Ø¬Ø¯ÙˆÙ„ requests)
+  // requestId  = id Ø§Ù„Ø·Ù„Ø¨ Ù†ÙØ³Ù‡ (Ù…Ù† Ø¬Ø¯ÙˆÙ„ requests) Ø¹Ø´Ø§Ù† Ù†Ø­Ø¯Ù‘Ø« Ø­Ø§Ù„ØªÙ‡ Ø¨Ø¹Ø¯ Ø§Ù„ØªÙ…ÙˆÙŠÙ„
+  final String? investorId;
+  final String? requestId;
 
   const EntrepreneurIdeaDetailsScreen({
     super.key,
     required this.ideaData,
+    this.investorId,
+    this.requestId,
   });
 
   @override
@@ -2544,6 +2684,7 @@ class _EntrepreneurIdeaDetailsScreenState
   final Map<int, File> _replacedFiles = {};
   final Map<int, String> _replacedFileNames = {};
 
+  // âœ… Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ø¹Ù‚ÙˆØ¯ Ø§Ù„Ø¬Ø¯ÙŠØ¯Ø© (Ø¨ØªØªØ±ÙØ¹ ÙÙŠ bucket 'contracts')
   final List<File> _newContractFiles = [];
   final List<String> _newContractFileNames = [];
 
@@ -2596,12 +2737,13 @@ class _EntrepreneurIdeaDetailsScreenState
 
   void _detectChanges() {
     final docsChanged = _docListsDiffer(_existingDocUrls, _originalDocUrls);
-    final changed = _titleController.text.trim() != _originalTitle.trim() ||
-        (_category ?? '') != _originalCategory ||
-        _pitchController.text.trim() != _originalDescription.trim() ||
-        _replacedFiles.isNotEmpty ||
-        _newContractFiles.isNotEmpty ||
-        docsChanged;
+    final changed =
+        _titleController.text.trim() != _originalTitle.trim() ||
+            (_category ?? '') != _originalCategory ||
+            _pitchController.text.trim() != _originalDescription.trim() ||
+            _replacedFiles.isNotEmpty ||
+            _newContractFiles.isNotEmpty ||
+            docsChanged;
 
     if (changed != _hasChanges) setState(() => _hasChanges = changed);
   }
@@ -2617,11 +2759,15 @@ class _EntrepreneurIdeaDetailsScreenState
   String _docLabel(String url, int index) {
     if (url.contains('bp_')) return 'Business Plan';
     if (url.contains('fs_')) return 'Feasibility Study';
-    if (url.contains('contract_')) return 'Contract';
+    // âœ… Ø§Ù„Ø¹Ù‚ÙˆØ¯ Ø§Ù„Ù„ÙŠ Ø§ØªØ±ÙØ¹Øª ÙÙŠ bucket contracts Ø¨ØªÙŠØ¬ÙŠ URL ÙÙŠÙ‡ ÙƒÙ„Ù…Ø© contracts
+    if (url.contains('contract_') || url.contains('/contracts/')) {
+      return 'Contract';
+    }
     return 'Document ${index + 1}';
   }
 
-  bool _isContractUrl(String url) => url.contains('contract_');
+  bool _isContractUrl(String url) =>
+      url.contains('contract_') || url.contains('/contracts/');
 
   void _reindexReplacementMaps(int removedIndex) {
     final newFiles = <int, File>{};
@@ -2720,10 +2866,8 @@ class _EntrepreneurIdeaDetailsScreenState
     return savePath;
   }
 
-  /// ÙŠÙØªØ­ Ø§Ù„Ù…Ù„Ù Ù…Ø­Ù„ÙŠØ§Ù‹ Ø¹Ø¨Ø± ØªØ·Ø¨ÙŠÙ‚ Ø§Ù„Ù†Ø¸Ø§Ù… Ø§Ù„Ø§ÙØªØ±Ø§Ø¶ÙŠ (PDF / Word â€¦).
   Future<void> _openDocument({File? localFile, String? remoteUrl}) async {
     if (_isOpeningDoc) return;
-
     setState(() => _isOpeningDoc = true);
 
     try {
@@ -2761,9 +2905,14 @@ class _EntrepreneurIdeaDetailsScreenState
 
     setState(() => _isSaving = true);
 
+    // âœ… Ù†Ø­ÙØ¸ Ù‡Ø§ÙŠ Ø§Ù„Ù‚ÙŠÙ…Ø© Ù‡Ù†Ø§ Ù‚Ø¨Ù„ Ù…Ø§ Ù†ÙØ¶ÙŠ Ø§Ù„Ù‚Ø§ÙŠÙ…Ø© Ø¨Ø§Ù„Ø£Ø³ÙÙ„ Ø¨Ø¹Ø¯ Ø§Ù„Ø±ÙØ¹ØŒ
+    // Ù„Ø£Ù†Ù‡Ø§ Ø¨ØªØ­Ø¯Ø¯ Ø¥Ø°Ø§ Ù„Ø§Ø²Ù… Ù†Ø¹Ù…Ù„ Ø¹Ù…Ù„ÙŠØ© "Funding" ÙƒØ§Ù…Ù„Ø© Ø¨Ø¹Ø¯ Ø§Ù„Ø­ÙØ¸.
+    final bool hadNewContract = _newContractFiles.isNotEmpty;
+
     try {
       List<String> updatedDocUrls = List.from(_existingDocUrls);
 
+      // 1) Ø±ÙØ¹ Ø§Ù„Ù…Ù„ÙØ§Øª Ø§Ù„Ø¨Ø¯ÙŠÙ„Ø© ÙÙŠ ideas_docs (Ù†ÙØ³ Ø§Ù„Ù€ bucket Ø§Ù„Ø£ØµÙ„ÙŠ)
       for (final entry in _replacedFiles.entries) {
         final index = entry.key;
         final file = entry.value;
@@ -2785,27 +2934,63 @@ class _EntrepreneurIdeaDetailsScreenState
         }
       }
 
+      // âœ… 2) Ø±ÙØ¹ Ø§Ù„Ø¹Ù‚ÙˆØ¯ Ø§Ù„Ø¬Ø¯ÙŠØ¯Ø© ÙÙŠ bucket Ù…Ù†ÙØµÙ„ Ø§Ø³Ù…Ù‡ 'contracts'
       for (int i = 0; i < _newContractFiles.length; i++) {
         final fileName =
-            'contract_${DateTime.now().millisecondsSinceEpoch}_${_newContractFileNames[i]}';
+            '${DateTime.now().millisecondsSinceEpoch}_${_newContractFileNames[i]}';
 
         await _supabase.storage
-            .from('ideas_docs')
+            .from('contracts')
             .upload('public/$fileName', _newContractFiles[i]);
 
         final newUrl = _supabase.storage
-            .from('ideas_docs')
+            .from('contracts')
             .getPublicUrl('public/$fileName');
 
         updatedDocUrls.add(newUrl);
       }
 
+      // 3) ØªØ­Ø¯ÙŠØ« Ø¬Ø¯ÙˆÙ„ ideas (Ø§Ù„Ø¹Ù†ÙˆØ§Ù†ØŒ Ø§Ù„ÙˆØµÙØŒ Ø§Ù„ØªØµÙ†ÙŠÙØŒ Ø§Ù„Ù…Ø³ØªÙ†Ø¯Ø§Øª)
       await _supabase.from('ideas').update({
         'title': _titleController.text.trim(),
         'description': _pitchController.text.trim(),
         'category': _category ?? _originalCategory,
         'idea_docs': updatedDocUrls,
       }).eq('id', ideaId);
+
+      // âœ… 4) Ù„Ùˆ Ù‡Ø§ÙŠ Ø§Ù„Ø´Ø§Ø´Ø© Ù…ÙØªÙˆØ­Ø© Ù…Ù† Ø¥Ø´Ø¹Ø§Ø± Ø§Ø³ØªØ«Ù…Ø§Ø± ÙˆØªÙ… Ø±ÙØ¹ Ø¹Ù‚Ø¯ Ø¬Ø¯ÙŠØ¯ØŒ
+      // Ù†Ø¹Ù…Ù„ Ø¹Ù…Ù„ÙŠØ© "ØªÙ…ÙˆÙŠÙ„" ÙƒØ§Ù…Ù„Ø©:
+      //   - ØªØ­ÙˆÙŠÙ„ Ø­Ø§Ù„Ø© Ø§Ù„ÙÙƒØ±Ø© Ù…Ù† pending Ø¥Ù„Ù‰ funded
+      //   - ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø§Ø³ØªØ«Ù…Ø§Ø± Ø¨Ø¬Ø¯ÙˆÙ„ investments (Ø±Ø¨Ø· investor_id Ø¨Ù€ idea_id)
+      //   - ØªØ­Ø¯ÙŠØ« Ø­Ø§Ù„Ø© Ø§Ù„Ù€ request Ø§Ù„Ù…Ø±ØªØ¨Ø· Ù„Ù€ funded
+      //   - Ø¥Ø±Ø³Ø§Ù„ Ø¥Ø´Ø¹Ø§Ø± ØªØ£ÙƒÙŠØ¯ Ù„Ù„Ù…Ø³ØªØ«Ù…Ø±
+      if (hadNewContract && widget.investorId != null) {
+        await _supabase
+            .from('ideas')
+            .update({'status': 'funded'}).eq('id', ideaId);
+
+        await _supabase.from('investments').insert({
+          'investor_id': widget.investorId,
+          'idea_id': ideaId,
+          'investment_date': DateTime.now().toIso8601String(),
+        });
+
+        if (widget.requestId != null) {
+          await _supabase
+              .from('requests')
+              .update({'status': 'funded'}).eq('id', widget.requestId!);
+        }
+
+        await _supabase.from('notifications').insert({
+          'user_id': widget.investorId,
+          'title': 'Investment Confirmed! ðŸŽ‰',
+          'content':
+          'Your investment in "${_titleController.text.trim()}" has been confirmed and the contract is signed.',
+          'type': 'funded',
+          'is_read': false,
+          'idea_id': ideaId,
+        });
+      }
 
       if (mounted) {
         _originalTitle = _titleController.text.trim();
@@ -2842,7 +3027,6 @@ class _EntrepreneurIdeaDetailsScreenState
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final textTheme = theme.textTheme;
-
     final hasAnyDocs =
         _existingDocUrls.isNotEmpty || _newContractFiles.isNotEmpty;
 
@@ -2864,6 +3048,8 @@ class _EntrepreneurIdeaDetailsScreenState
                   ),
                 ),
                 const SizedBox(height: 20),
+
+                // â”€â”€ Idea Title â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 TextFormField(
                   controller: _titleController,
                   textInputAction: TextInputAction.next,
@@ -2873,11 +3059,13 @@ class _EntrepreneurIdeaDetailsScreenState
                   ),
                 ),
                 const SizedBox(height: 16),
+
+                // â”€â”€ Category â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 InputDecorator(
                   decoration: const InputDecoration(
                     labelText: 'Category',
                     contentPadding:
-                        EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                   ),
                   child: DropdownButtonHideUnderline(
                     child: DropdownButton<String>(
@@ -2897,7 +3085,7 @@ class _EntrepreneurIdeaDetailsScreenState
                       borderRadius: BorderRadius.circular(8),
                       items: _categories
                           .map((c) => DropdownMenuItem<String>(
-                              value: c, child: Text(c)))
+                          value: c, child: Text(c)))
                           .toList(),
                       onChanged: (value) {
                         setState(() => _category = value);
@@ -2907,6 +3095,8 @@ class _EntrepreneurIdeaDetailsScreenState
                   ),
                 ),
                 const SizedBox(height: 16),
+
+                // â”€â”€ Pitch Description â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 TextFormField(
                   controller: _pitchController,
                   minLines: 4,
@@ -2918,6 +3108,8 @@ class _EntrepreneurIdeaDetailsScreenState
                   ),
                 ),
                 const SizedBox(height: 28),
+
+                // â”€â”€ Documents â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 if (hasAnyDocs) ...[
                   Text(
                     'Uploaded Documents',
@@ -2927,6 +3119,8 @@ class _EntrepreneurIdeaDetailsScreenState
                     ),
                   ),
                   const SizedBox(height: 12),
+
+                  // Ø§Ù„ÙˆØ«Ø§Ø¦Ù‚ Ø§Ù„Ù…ÙˆØ¬ÙˆØ¯Ø©
                   ...List.generate(_existingDocUrls.length, (i) {
                     final url = _existingDocUrls[i];
                     final isReplaced = _replacedFiles.containsKey(i);
@@ -2946,10 +3140,11 @@ class _EntrepreneurIdeaDetailsScreenState
                         }
                       },
                       onReplace: () => _pickReplacementFile(i),
-                      onDelete:
-                          isContract ? () => _deleteExistingDoc(i) : null,
+                      onDelete: isContract ? () => _deleteExistingDoc(i) : null,
                     );
                   }),
+
+                  // Ø§Ù„Ø¹Ù‚ÙˆØ¯ Ø§Ù„Ø¬Ø¯ÙŠØ¯Ø© (Ù„Ø³Ù‡ Ù…ØªØ±ÙØ¹ØªØ´)
                   ...List.generate(_newContractFiles.length, (i) {
                     return _DocumentRow(
                       label: _newContractFileNames[i],
@@ -2960,10 +3155,15 @@ class _EntrepreneurIdeaDetailsScreenState
                       onDelete: () => _removeNewContract(i),
                     );
                   }),
+
                   const SizedBox(height: 8),
                 ],
+
+                // â”€â”€ Add Contract Button â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 _AddContractButton(onPressed: _addContractFile),
                 const SizedBox(height: 32),
+
+                // â”€â”€ Submit Changes Button â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 _SubmitChangesButton(
                   enabled: _hasChanges && !_isSaving,
                   isLoading: _isSaving,
@@ -2973,6 +3173,8 @@ class _EntrepreneurIdeaDetailsScreenState
               ],
             ),
           ),
+
+          // Loading overlay Ø£Ø«Ù†Ø§Ø¡ ÙØªØ­ Ø§Ù„Ù…Ù„Ù
           if (_isOpeningDoc)
             const ColoredBox(
               color: Color(0x33000000),
@@ -3012,7 +3214,10 @@ class _EntrepreneurIdeaDetailsScreenState
   }
 }
 
-/// ØµÙ ÙˆØ«ÙŠÙ‚Ø© â€” Ø§Ù„Ø¶ØºØ· Ø¹Ù„Ù‰ Ø§Ù„ØµÙ Ø¨Ø§Ù„ÙƒØ§Ù…Ù„ ÙŠÙØªØ­ Ø§Ù„Ù…Ù„ÙØ› Ø£ÙŠÙ‚ÙˆÙ†Ø© Ø§Ù„Ø§Ø³ØªØ¨Ø¯Ø§Ù„ Ø¹Ù„Ù‰ Ø§Ù„ÙŠÙ…ÙŠÙ†.
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// WIDGETS
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
 class _DocumentRow extends StatelessWidget {
   final String label;
   final bool isReplaced;
@@ -3046,18 +3251,19 @@ class _DocumentRow extends StatelessWidget {
             color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 4,
             offset: const Offset(0, 2),
-          )
+          ),
         ],
       ),
       clipBehavior: Clip.antiAlias,
       child: Row(
         children: [
-          // Ø§Ù„Ø¶ØºØ· Ø¹Ù„Ù‰ Ù‡Ø°Ø§ Ø§Ù„Ø¬Ø²Ø¡ (Ø§Ù„Ø§Ø³Ù… ÙˆØ§Ù„Ø£ÙŠÙ‚ÙˆÙ†Ø©) ÙŠÙØªØ­ Ø§Ù„Ù…Ù„Ù
+          // Ø§Ù„Ø¶ØºØ· Ø¹Ù„Ù‰ Ù‡Ø°Ø§ Ø§Ù„Ø¬Ø²Ø¡ ÙŠÙØªØ­ Ø§Ù„Ù…Ù„Ù
           Expanded(
             child: InkWell(
               onTap: onOpen,
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+                padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
                 child: Row(
                   children: [
                     Icon(
@@ -3087,7 +3293,7 @@ class _DocumentRow extends StatelessWidget {
               ),
             ),
           ),
-          // Ø¬Ø²Ø¡ Ø§Ù„Ø£ÙŠÙ‚ÙˆÙ†Ø§Øª Ø¹Ù„Ù‰ Ø§Ù„ÙŠÙ…ÙŠÙ† (ØªØ¹Ø¯ÙŠÙ„/Ø­Ø°Ù)
+          // Ø£ÙŠÙ‚ÙˆÙ†Ø§Øª Ø§Ù„ÙŠÙ…ÙŠÙ† (Ø­Ø°Ù + Ø§Ø³ØªØ¨Ø¯Ø§Ù„)
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: Row(
@@ -3107,7 +3313,7 @@ class _DocumentRow extends StatelessWidget {
                   icon: Icons.sync,
                   color: AppColors.grayColor,
                   tooltip: 'Replace file',
-                  size: 28, // Ø£ÙŠÙ‚ÙˆÙ†Ø© Ø§Ù„Ø§Ø³ØªØ¨Ø¯Ø§Ù„ Ø£ØµØ¨Ø­Øª Ø£ÙƒØ¨Ø±
+                  size: 28,
                   onTap: onReplace,
                 ),
               ],
@@ -3156,7 +3362,6 @@ class _DocIconButton extends StatelessWidget {
 
 class _AddContractButton extends StatelessWidget {
   final VoidCallback onPressed;
-
   const _AddContractButton({required this.onPressed});
 
   @override
@@ -3210,19 +3415,19 @@ class _SubmitChangesButton extends StatelessWidget {
         onPressed: enabled ? onPressed : null,
         icon: isLoading
             ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.white,
-                ),
-              )
+          width: 18,
+          height: 18,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: Colors.white,
+          ),
+        )
             : CustomSvgPicture(
-                path: AppImages.editSvg,
-                color: enabled ? theme.colorScheme.onPrimary : disabledColor,
-                width: 20,
-                height: 20,
-              ),
+          path: AppImages.editSvg,
+          color: enabled ? theme.colorScheme.onPrimary : disabledColor,
+          width: 20,
+          height: 20,
+        ),
         label: Text(
           isLoading ? 'Saving...' : 'Submit Changes',
           style: theme.textTheme.titleMedium?.copyWith(
@@ -3234,7 +3439,7 @@ class _SubmitChangesButton extends StatelessWidget {
           elevation: 0,
           padding: const EdgeInsets.symmetric(vertical: 16),
           backgroundColor:
-              enabled ? AppColors.primaryColor : AppColors.bgGray,
+          enabled ? AppColors.primaryColor : AppColors.bgGray,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
@@ -3298,7 +3503,6 @@ class _NotificationBell extends StatelessWidget {
   }
 }
 
-
 ``n
 ### File: D:\FlutterProjects\Investra_App\lib\features\home\presentation\pages\home_screen.dart
 `dart
@@ -3308,7 +3512,7 @@ class _NotificationBell extends StatelessWidget {
 ### File: D:\FlutterProjects\Investra_App\lib\features\home\presentation\pages\investor_home_screen.dart
 `dart
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/svg.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:investra/core/constants/app_images.dart';
 import 'package:investra/core/styles/colors.dart';
 import 'package:investra/features/home/presentation/widgets/build_filters.dart';
@@ -3354,18 +3558,33 @@ class _InvestorHomeScreenState extends State<InvestorHomeScreen> {
             stream: supabase.from('notifications').stream(primaryKey: ['id']),
             builder: (context, snapshot) {
               final unread = snapshot.data?.where((n) =>
-              n['user_id'] == userId && n['is_read'] == false
-              ).toList() ?? [];
+              n['user_id'] == userId && n['is_read'] == false)
+                  .toList() ??
+                  [];
               bool hasUnread = unread.isNotEmpty;
 
               return Stack(
                 children: [
                   IconButton(
-                    onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const NotificationsScreen())),
-                    icon: SvgPicture.asset(AppImages.notificationSvg, colorFilter: const ColorFilter.mode(AppColors.primaryColor, BlendMode.srcIn)),
+                    onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (context) =>
+                            const NotificationsScreen())),
+                    icon: SvgPicture.asset(AppImages.notificationSvg,
+                        colorFilter: const ColorFilter.mode(
+                            AppColors.primaryColor, BlendMode.srcIn)),
                   ),
                   if (hasUnread)
-                    Positioned(right: 12, top: 12, child: Container(width: 9, height: 9, decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle))),
+                    Positioned(
+                        right: 12,
+                        top: 12,
+                        child: Container(
+                            width: 9,
+                            height: 9,
+                            decoration: const BoxDecoration(
+                                color: Colors.red,
+                                shape: BoxShape.circle))),
                 ],
               );
             },
@@ -3378,34 +3597,63 @@ class _InvestorHomeScreenState extends State<InvestorHomeScreen> {
           controller: widget.scrollController,
           physics: const BouncingScrollPhysics(),
           child: Padding(
-            padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.05, vertical: 12),
+            padding: EdgeInsets.symmetric(
+                horizontal: screenWidth * 0.05, vertical: 12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 BuildFilters(
                   selectedCategory: _categoryFilter,
                   selectedRating: _ratingFilter,
-                  onCategoryChanged: (val) => setState(() => _categoryFilter = val),
-                  onRatingChanged: (val) => setState(() => _ratingFilter = val),
+                  onCategoryChanged: (val) =>
+                      setState(() => _categoryFilter = val),
+                  onRatingChanged: (val) =>
+                      setState(() => _ratingFilter = val),
                 ),
                 const SizedBox(height: 22),
                 const Text(
                   'Investment Opportunities',
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: AppColors.primaryColor),
+                  style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.primaryColor),
                 ),
                 const SizedBox(height: 18),
                 StreamBuilder<List<Map<String, dynamic>>>(
-                  stream: supabase.from('ideas').stream(primaryKey: ['id']).order('created_at'),
+                  stream: supabase
+                      .from('ideas')
+                      .stream(primaryKey: ['id']).order('created_at'),
                   builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+                    if (snapshot.connectionState == ConnectionState.waiting)
+                      return const Center(
+                          child: CircularProgressIndicator());
 
                     var ideas = snapshot.data ?? [];
 
+                    // âœ… ÙÙ„ØªØ± Ø§Ù„Ù€ category
                     if (_categoryFilter != 'All') {
-                      ideas = ideas.where((i) => (i['category']?.toString().toLowerCase() ?? '') == _categoryFilter.toLowerCase()).toList();
+                      ideas = ideas
+                          .where((i) =>
+                      (i['category']?.toString().toLowerCase() ??
+                          '') ==
+                          _categoryFilter.toLowerCase())
+                          .toList();
                     }
 
-                    if (ideas.isEmpty) return const Center(child: Padding(padding: EdgeInsets.only(top: 40), child: Text("No ideas found.")));
+                    // âœ… Ø§Ù„ØªØ¹Ø¯ÙŠÙ„: ÙÙ„ØªØ± Ø§Ù„Ù€ rating Ù…Ø·Ø¨Ù‚ Ù‡Ù„Ù‚
+                    if (_ratingFilter > 0) {
+                      ideas = ideas
+                          .where((i) =>
+                      (i['ai_rating'] ?? 0).toDouble() >=
+                          _ratingFilter)
+                          .toList();
+                    }
+
+                    if (ideas.isEmpty)
+                      return const Center(
+                          child: Padding(
+                              padding: EdgeInsets.only(top: 40),
+                              child: Text("No ideas found.")));
 
                     return ListView.builder(
                       shrinkWrap: true,
@@ -3416,16 +3664,18 @@ class _InvestorHomeScreenState extends State<InvestorHomeScreen> {
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 16),
                           child: BuildPostcard(
-                            category: (idea['category'] ?? 'General').toString().toUpperCase(),
+                            category: (idea['category'] ?? 'General')
+                                .toString()
+                                .toUpperCase(),
                             title: idea['title'] ?? 'No Title',
                             description: idea['description'] ?? '',
                             rating: (idea['ai_rating'] ?? 0).toDouble(),
                             onTap: () {
-                              // Ø§Ù„Ø§Ù†ØªÙ‚Ø§Ù„ Ù„ØµÙØ­Ø© Ø§Ù„ØªÙØ§ØµÙŠÙ„ ÙˆØªÙ…Ø±ÙŠØ± Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (context) => IdeaDetailsScreen(idea: idea),
+                                  builder: (context) =>
+                                      IdeaDetailsScreen(idea: idea),
                                 ),
                               );
                             },
@@ -3444,7 +3694,6 @@ class _InvestorHomeScreenState extends State<InvestorHomeScreen> {
     );
   }
 }
-
 
 ``n
 ### File: D:\FlutterProjects\Investra_App\lib\features\home\presentation\widgets\build_chat_request.dart
@@ -3704,88 +3953,77 @@ class BuildIdeaCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         color: AppColors.bgColor,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.secondary1Color),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.02),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+          // Ø§Ù„Ø¹Ù†ÙˆØ§Ù† ÙˆØ§Ù„ÙˆØµÙ
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.blackColor),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
+                const SizedBox(height: 2),
+                Text(description,
+                    style: const TextStyle(
+                        fontSize: 12, color: AppColors.grayColor),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
+                const SizedBox(height: 6),
+                Row(
                   children: [
-                    Text(title,
-                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.blackColor),
-                        maxLines: 1, overflow: TextOverflow.ellipsis),
-                    const SizedBox(height: 2),
-                    Text(description,
-                        style: const TextStyle(fontSize: 13, color: AppColors.grayColor),
-                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    const Icon(Icons.visibility_outlined,
+                        size: 13, color: AppColors.gray2Color),
+                    const SizedBox(width: 4),
+                    Text('$views views',
+                        style: const TextStyle(
+                            fontSize: 12, color: AppColors.gray2Color)),
+                    const SizedBox(width: 12),
+                    const Icon(Icons.chat_bubble_outline,
+                        size: 13, color: AppColors.gray2Color),
+                    const SizedBox(width: 4),
+                    Text('$activeInquiries inquiries',
+                        style: const TextStyle(
+                            fontSize: 12, color: AppColors.gray2Color)),
                   ],
                 ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(color: AppColors.lightgreen, borderRadius: BorderRadius.circular(20)),
-                child: Row(
-                  children: [
-                    const Icon(Icons.bolt, size: 14, color: AppColors.green1Color),
-                    Text('$aiScore AI Score',
-                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.green1Color)),
-                  ],
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
-          const SizedBox(height: 16),
-          const Divider(height: 1, color: AppColors.secondary2Color),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              _stat('TOTAL VIEWS', views, viewTrend, true),
-              _stat('INVESTOR INQUIRIES', '$activeInquiries Active', '', false),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _stat(String label, String val, String trend, bool isTrend) {
-    return Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: const TextStyle(fontSize: 10, color: AppColors.gray2Color, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              Text(val, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.blackColor)),
-              if (isTrend) ...[
-                const SizedBox(width: 4),
-                Text(trend, style: const TextStyle(fontSize: 12, color: AppColors.green1Color, fontWeight: FontWeight.bold)),
-              ]
-            ],
+          const SizedBox(width: 8),
+          // AI Score badge
+          Container(
+            padding:
+            const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+                color: AppColors.lightgreen,
+                borderRadius: BorderRadius.circular(20)),
+            child: Row(
+              children: [
+                const Icon(Icons.bolt, size: 13, color: AppColors.green1Color),
+                Text('$aiScore',
+                    style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.green1Color)),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
 }
-
 
 ``n
 ### File: D:\FlutterProjects\Investra_App\lib\features\home\presentation\widgets\build_post_card.dart
@@ -3967,7 +4205,6 @@ import 'package:flutter/material.dart';
 import 'package:investra/core/styles/colors.dart';
 
 class BuildSubmissionCard extends StatelessWidget {
-  // ØªØ¹Ø±ÙŠÙ Ø§Ù„Ù…ØªØºÙŠØ±Ø§Øª Ø§Ù„Ù…Ø·Ù„ÙˆØ¨Ø© Ù„Ø¬Ø¹Ù„ Ø§Ù„ÙƒØ§Ø±Øª Ø¯ÙŠÙ†Ø§Ù…ÙŠÙƒÙŠ
   final int currentCount;
   final int maxLimit;
   final int remainingSlots;
@@ -3981,7 +4218,6 @@ class BuildSubmissionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Ø­Ø³Ø§Ø¨ Ù‚ÙŠÙ…Ø© Ø§Ù„Ø¨Ø±ÙˆØ¬Ø±Ø³ Ø¨Ø§Ø± (Ù†Ø³Ø¨Ø© Ù…Ø¦ÙˆÙŠØ© Ø¨ÙŠÙ† 0.0 Ùˆ 1.0)
     double progressValue = maxLimit > 0 ? (currentCount / maxLimit) : 0.0;
 
     return Container(
@@ -4006,13 +4242,14 @@ class BuildSubmissionCard extends StatelessWidget {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding:
+                const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: AppColors.primaryColor,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
-                  '$currentCount / $maxLimit', // Ø¹Ø±Ø¶ Ø§Ù„Ø£Ø±Ù‚Ø§Ù… Ø§Ù„Ø­Ù‚ÙŠÙ‚ÙŠØ© Ù‡Ù†Ø§
+                  '$currentCount / $maxLimit',
                   style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w600,
@@ -4026,47 +4263,26 @@ class BuildSubmissionCard extends StatelessWidget {
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
             child: LinearProgressIndicator(
-              value: progressValue, // Ø§Ù„Ù‚ÙŠÙ…Ø© Ø§Ù„Ù…Ø­Ø³ÙˆØ¨Ø© Ø¯ÙŠÙ†Ø§Ù…ÙŠÙƒÙŠØ§Ù‹
+              value: progressValue,
               minHeight: 8,
               backgroundColor: const Color(0xFFD6DCE5),
-              valueColor: const AlwaysStoppedAnimation(AppColors.primaryColor),
+              valueColor:
+              const AlwaysStoppedAnimation(AppColors.primaryColor),
             ),
           ),
           const SizedBox(height: 14),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                '$remainingSlots slots remaining for your account', // Ù†Øµ Ø¯ÙŠÙ†Ø§Ù…ÙŠÙƒÙŠ
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: AppColors.gray2Color,
-                ),
-              ),
-              GestureDetector(
-                onTap: () {
-                  // Ù‡Ù†Ø§ Ù…Ù…ÙƒÙ† ØªØ¶ÙŠÙÙŠ Ù†Ø§ÙØ°Ø© ØªØ®Ø¨Ø± Ø§Ù„ÙŠÙˆØ²Ø± Ø£Ù† Ø§Ù„ØªØ±Ù‚ÙŠØ© Ù‚Ø§Ø¯Ù…Ø© Ù‚Ø±ÙŠØ¨Ø§Ù‹
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Upgrade feature coming soon!")),
-                  );
-                },
-                child: const Text(
-                  'Upgrade >',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.primaryColor,
-                  ),
-                ),
-              )
-            ],
-          )
+          Text(
+            '$remainingSlots slots remaining for your account',
+            style: const TextStyle(
+              fontSize: 13,
+              color: AppColors.gray2Color,
+            ),
+          ),
         ],
       ),
     );
   }
 }
-
 
 ``n
 ### File: D:\FlutterProjects\Investra_App\lib\features\home\presentation\widgets\build_submit_button.dart
@@ -4330,14 +4546,18 @@ class IdeaLogic {
     }
   }
 
-  // ØªØ­Ø¯ÙŠØ¯ ØµÙˆØ±Ø© Ø§Ù„Ù‚Ø³Ù… Ø¨Ù†Ø§Ø¡Ù‹ Ø¹Ù„Ù‰ Ø§Ù„ØªØµÙ†ÙŠÙ
   String getCategoryImage(String category) {
     switch (category.toLowerCase()) {
-      case 'technology': return AppImages.technology_idea;
-      case 'finance': return AppImages.finance;
-      case 'healthcare': return AppImages.medCare;
-      case 'ai': return AppImages.robotIdeaAi;
-      default: return AppImages.technology_idea;
+      case 'technology':
+        return AppImages.technology_idea;
+      case 'finance':
+        return AppImages.finance;
+      case 'healthcare':
+        return AppImages.medCare;
+      case 'ai':
+        return AppImages.robotIdeaAi;
+      default:
+        return AppImages.technology_idea;
     }
   }
 
@@ -4355,7 +4575,6 @@ class IdeaLogic {
           ? 'Chat Request for: $ideaTitle'
           : 'Investment Interest in: $ideaTitle';
 
-
       await _supabase.from('requests').insert({
         'idea_id': ideaId,
         'sender_id': myId,
@@ -4370,8 +4589,35 @@ class IdeaLogic {
       rethrow;
     }
   }
-}
 
+  Future<Map<String, dynamic>?> getIdeaById(String ideaId) async {
+    try {
+      return await _supabase
+          .from('ideas')
+          .select()
+          .eq('id', ideaId)
+          .maybeSingle();
+    } catch (e) {
+      print("Error fetching idea: $e");
+      return null;
+    }
+  }
+
+
+  Future<String?> getInvestorIdFromRequest(String requestId) async {
+    try {
+      final data = await _supabase
+          .from('requests')
+          .select('sender_id')
+          .eq('id', requestId)
+          .maybeSingle();
+      return data?['sender_id']?.toString();
+    } catch (e) {
+      print("Error fetching investor id: $e");
+      return null;
+    }
+  }
+}
 
 ``n
 ### File: D:\FlutterProjects\Investra_App\lib\features\idea_details\presentation\pages\idea_details_screen.dart
@@ -4409,7 +4655,6 @@ class _IdeaDetailsScreenState extends State<IdeaDetailsScreen> {
     try {
       final supabase = Supabase.instance.client;
       final userId = supabase.auth.currentUser?.id;
-
       if (userId != null) {
         await supabase.from('idea_views').insert({
           'idea_id': widget.idea['id'],
@@ -4432,13 +4677,17 @@ class _IdeaDetailsScreenState extends State<IdeaDetailsScreen> {
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(backgroundColor: AppColors.green1Color, content: Text('Request sent!')),
+          const SnackBar(
+              backgroundColor: AppColors.green1Color,
+              content: Text('Request sent!')),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(backgroundColor: AppColors.errorColor, content: Text('Request failed.')),
+          const SnackBar(
+              backgroundColor: AppColors.errorColor,
+              content: Text('Request failed.')),
         );
       }
     } finally {
@@ -4446,13 +4695,31 @@ class _IdeaDetailsScreenState extends State<IdeaDetailsScreen> {
     }
   }
 
+  String _docLabel(String url, int index) {
+    if (url.contains('bp_')) return 'Business Plan';
+    if (url.contains('fs_')) return 'Feasibility Study';
+    if (url.contains('/contracts/') || url.contains('contract_')) {
+      return 'Contract';
+    }
+    return 'Document ${index + 1}';
+  }
+
+  bool _isContract(String url) =>
+      url.contains('/contracts/') || url.contains('contract_');
+
   @override
   Widget build(BuildContext context) {
     final String category = widget.idea['category'] ?? 'General';
-    final List<dynamic> docs = widget.idea['idea_docs'] ?? [];
-    final String description = widget.idea['description'] ?? 'No description provided.';
+    final List<String> docs = [
+      widget.idea['business_plan_url'],
+      widget.idea['feasibility_study_url'],
+    ].whereType<String>().toList();
+
+    final String description =
+        widget.idea['description'] ?? 'No description provided.';
     final String date = widget.idea['created_at'] != null
-        ? DateFormat.yMMMd().format(DateTime.parse(widget.idea['created_at']))
+        ? DateFormat.yMMMd()
+        .format(DateTime.parse(widget.idea['created_at']))
         : 'Recently';
 
     return Scaffold(
@@ -4463,16 +4730,17 @@ class _IdeaDetailsScreenState extends State<IdeaDetailsScreen> {
         scrolledUnderElevation: 0,
         toolbarHeight: 50,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, color: AppColors.primaryColor, size: 18),
+          icon: const Icon(Icons.arrow_back_ios_new,
+              color: AppColors.primaryColor, size: 18),
           onPressed: () => Navigator.pop(context),
         ),
         title: const Text(
           'IDEA DETAILS',
           style: TextStyle(
-              color: AppColors.primaryColor,
-              fontWeight: FontWeight.bold,
-              fontSize: 15,
-              letterSpacing: 1.1
+            color: AppColors.primaryColor,
+            fontWeight: FontWeight.bold,
+            fontSize: 15,
+            letterSpacing: 1.1,
           ),
         ),
         centerTitle: true,
@@ -4485,10 +4753,9 @@ class _IdeaDetailsScreenState extends State<IdeaDetailsScreen> {
               imagePath: _logic.getCategoryImage(category),
               category: category,
             ),
-
-
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+              padding:
+              const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -4501,28 +4768,29 @@ class _IdeaDetailsScreenState extends State<IdeaDetailsScreen> {
                       height: 1.25,
                     ),
                   ),
-
                   const SizedBox(height: 4),
 
                   FutureBuilder<String>(
-                    future: _logic.getEntrepreneurName(widget.idea['entrepreneur_id']?.toString() ?? ''),
+                    future: _logic.getEntrepreneurName(
+                        widget.idea['entrepreneur_id']?.toString() ?? ''),
                     builder: (context, snapshot) {
                       final entrepreneurName = snapshot.data ?? '...';
-
                       return GestureDetector(
                         onTap: () {
-                          final String? entrepreneurId = widget.idea['entrepreneur_id']?.toString();
+                          final String? entrepreneurId =
+                          widget.idea['entrepreneur_id']?.toString();
                           if (entrepreneurId != null) {
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (context) => ProfileScreen(userId: entrepreneurId),
+                                builder: (context) =>
+                                    ProfileScreen(userId: entrepreneurId),
                               ),
                             );
                           }
                         },
                         child: Text(
-                          "Posted $date by $entrepreneurName",
+                          'Posted $date by $entrepreneurName',
                           style: const TextStyle(
                             color: AppColors.grayColor,
                             fontSize: 12,
@@ -4532,40 +4800,48 @@ class _IdeaDetailsScreenState extends State<IdeaDetailsScreen> {
                       );
                     },
                   ),
-
                   const SizedBox(height: 10),
 
-                  const AiInvestorRatingCard(),
-
+                  AiInvestorRatingCard(
+                    rating: (widget.idea['ai_rating'] ?? 0).toDouble(),
+                  ),
                   const SizedBox(height: 14),
 
                   const Text(
-                      "Project Description",
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.blackColor)
+                    'Project Description',
+                    style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.blackColor),
                   ),
                   const SizedBox(height: 5),
-
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         description,
                         maxLines: _isExpanded ? null : 4,
-                        overflow: _isExpanded ? TextOverflow.visible : TextOverflow.ellipsis,
+                        overflow: _isExpanded
+                            ? TextOverflow.visible
+                            : TextOverflow.ellipsis,
                         style: const TextStyle(
-                            fontSize: 13.5,
-                            height: 1.5,
-                            fontWeight: FontWeight.w400,
-                            color: AppColors.darkGray
+                          fontSize: 13.5,
+                          height: 1.5,
+                          fontWeight: FontWeight.w400,
+                          color: AppColors.darkGray,
                         ),
                       ),
                       GestureDetector(
-                        onTap: () => setState(() => _isExpanded = !_isExpanded),
+                        onTap: () =>
+                            setState(() => _isExpanded = !_isExpanded),
                         child: Padding(
                           padding: const EdgeInsets.only(top: 4.0),
                           child: Text(
-                            _isExpanded ? "Read Less" : "Read More",
-                            style: const TextStyle(color: AppColors.primaryColor, fontWeight: FontWeight.bold, fontSize: 12),
+                            _isExpanded ? 'Read Less' : 'Read More',
+                            style: const TextStyle(
+                                color: AppColors.primaryColor,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12),
                           ),
                         ),
                       ),
@@ -4574,36 +4850,71 @@ class _IdeaDetailsScreenState extends State<IdeaDetailsScreen> {
 
                   if (docs.isNotEmpty) ...[
                     const SizedBox(height: 14),
-                    const Text("Required Documents", style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.blackColor)),
+                    const Text(
+                      'Required Documents',
+                      style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.blackColor),
+                    ),
                     const SizedBox(height: 8),
-                    ...docs.map((docUrl) {
-                      bool isBP = docUrl.toString().contains('bp_');
+                    ...docs.asMap().entries.map((entry) {
+                      final int index = entry.key;
+                      final String url = entry.value;
+                      final bool isContract = _isContract(url);
+                      final String label = _docLabel(url, index);
+
                       return Container(
                         margin: const EdgeInsets.only(bottom: 8),
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 10),
                         decoration: BoxDecoration(
-                          color: AppColors.secondary2Color,
+                          color: isContract
+                              ? AppColors.primaryColor.withOpacity(0.06)
+                              : AppColors.secondary2Color,
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: AppColors.bgGray),
+                          border: Border.all(
+                            color: isContract
+                                ? AppColors.primaryColor.withOpacity(0.25)
+                                : AppColors.bgGray,
+                          ),
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.insert_drive_file, color: AppColors.primaryColor, size: 18),
+                            Icon(
+                              isContract
+                                  ? Icons.gavel_rounded
+                                  : Icons.insert_drive_file,
+                              color: AppColors.primaryColor,
+                              size: 18,
+                            ),
                             const SizedBox(width: 10),
                             Expanded(
                               child: Text(
-                                isBP ? "Business Plan" : "Feasibility Study",
-                                style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
+                                label,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w500,
+                                    fontSize: 13),
                               ),
                             ),
-                            const Icon(Icons.check_circle, color: AppColors.green1Color, size: 16),
+                            Icon(
+                              isContract
+                                  ? Icons.lock_outline
+                                  : Icons.check_circle,
+                              color: isContract
+                                  ? AppColors.grayColor
+                                  : AppColors.green1Color,
+                              size: 16,
+                            ),
                           ],
                         ),
                       );
-                    }).toList(),
+                    }),
                   ],
+
                   const SizedBox(height: 16),
-                  ActionButtonsSection(isLoading: _isLoading, onAction: _handleAction),
+                  ActionButtonsSection(
+                      isLoading: _isLoading, onAction: _handleAction),
                 ],
               ),
             ),
@@ -4613,7 +4924,6 @@ class _IdeaDetailsScreenState extends State<IdeaDetailsScreen> {
     );
   }
 }
-
 
 ``n
 ### File: D:\FlutterProjects\Investra_App\lib\features\idea_details\presentation\widgets\action_buttons_section.dart
@@ -4681,12 +4991,40 @@ import 'package:flutter/material.dart';
 import 'package:investra/core/styles/colors.dart';
 
 class AiInvestorRatingCard extends StatelessWidget {
-   final String ratingPercentage;
+  final double rating;
 
   const AiInvestorRatingCard({
     super.key,
-    this.ratingPercentage = "92%",
+    this.rating = 0,
   });
+
+  String _getPotentialLabel(double r) {
+    if (r >= 4) return "High Potential";
+    if (r >= 2.5) return "Medium Potential";
+    return "Low Potential";
+  }
+
+  Color _getPotentialColor(double r) {
+    if (r >= 4) return AppColors.darkgreen;
+    if (r >= 2.5) return Colors.orange;
+    return Colors.red;
+  }
+
+  Widget _buildStars() {
+    return Row(
+      children: List.generate(5, (i) {
+        IconData icon;
+        if (rating >= i + 1) {
+          icon = Icons.star;
+        } else if (rating >= i + 0.5) {
+          icon = Icons.star_half;
+        } else {
+          icon = Icons.star_border;
+        }
+        return Icon(icon, color: Colors.amber, size: 18);
+      }),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -4701,39 +5039,52 @@ class AiInvestorRatingCard extends StatelessWidget {
         children: [
           const Icon(Icons.psychology, color: AppColors.darkgreen, size: 24),
           const SizedBox(width: 12),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  "AI Feasibility Rate",
+                const Text(
+                  "AI INVESTOR RATING",
                   style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.darkgreen,
-                  ),
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.darkgreen),
                 ),
-                SizedBox(height: 2),
-                Text(
-                  "Based on project criteria and markets",
-                  style: TextStyle(fontSize: 11, color: AppColors.grayColor),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    _buildStars(),
+                    const SizedBox(width: 6),
+                    Text(
+                      rating.toStringAsFixed(1),
+                      style: const TextStyle(
+                          fontSize: 12, color: AppColors.grayColor),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            padding:
+            const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              color: AppColors.darkgreen,
+              color: _getPotentialColor(rating),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Text(
-              ratingPercentage,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 14,
-              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.trending_up, color: Colors.white, size: 14),
+                const SizedBox(width: 4),
+                Text(
+                  _getPotentialLabel(rating),
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 11),
+                ),
+              ],
             ),
           ),
         ],
@@ -4741,7 +5092,6 @@ class AiInvestorRatingCard extends StatelessWidget {
     );
   }
 }
-
 
 ``n
 ### File: D:\FlutterProjects\Investra_App\lib\features\idea_details\presentation\widgets\category_image_header.dart
@@ -4764,7 +5114,7 @@ class CategoryImageHeader extends StatelessWidget {
     return Container(
       height: 180,
       width: double.infinity,
-      // ðŸ› ï¸ Ù‚Ù„Ù„Ù†Ø§ Ø§Ù„Ù€ vertical margin Ù…Ù† 8 Ù„Ù€ 4 Ø¹Ø´Ø§Ù† Ù†Ø±ÙØ¹ Ø§Ù„ÙƒØ±Øª Ù„ÙÙˆÙ‚
+
       margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
@@ -5234,14 +5584,12 @@ class _MainAppScreenState extends State<MainAppScreen> {
 ``n
 ### File: D:\FlutterProjects\Investra_App\lib\features\messages\data\chat_supabase_service.dart
 `dart
+import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:investra/features/messages/domain/entities/chat_contact.dart';
 import 'package:investra/features/messages/domain/entities/chat_message.dart';
-
-// â”€â”€â”€ Ø£Ø³Ù…Ø§Ø¡ Ø§Ù„Ø£Ø¹Ù…Ø¯Ø© Ø§Ù„Ø­Ù‚ÙŠÙ‚ÙŠØ© ÙÙŠ DB (Ø¨Ø§Ù„Ù…Ø³Ø§ÙØ§Øª) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// messageid | chat_id | sender_id | Message text | is read | time stamp
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class ChatSupabaseService {
   final _sb = Supabase.instance.client;
@@ -5263,7 +5611,8 @@ class ChatSupabaseService {
             messageid,
             "Message text",
             "time stamp",
-            sender_id
+            sender_id,
+            message_type
           )
         ''')
         .or('entrepreneur_id.eq.$_myId,investor_id.eq.$_myId');
@@ -5275,7 +5624,6 @@ class ChatSupabaseService {
       final String peerId =
       iAmEntrepreneur ? row['investor_id'] : row['entrepreneur_id'];
 
-      // Ø¬ÙŠØ¨ Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ø·Ø±Ù Ø§Ù„ØªØ§Ù†ÙŠ
       final profileRow = await _sb
           .from('User')
           .select('FullName')
@@ -5294,15 +5642,29 @@ class ChatSupabaseService {
         fullName = p!['FullName'];
       }
 
-      // Ø±ØªÙ‘Ø¨ Ø§Ù„Ø±Ø³Ø§Ø¦Ù„
       final List msgs = row['message'] ?? [];
       msgs.sort((a, b) =>
           (a['time stamp'] ?? '').compareTo(b['time stamp'] ?? ''));
 
       final lastMsg = msgs.isNotEmpty ? msgs.last : null;
-      final String preview = lastMsg?['Message text'] ?? '...';
 
-      // âœ… ØªÙ… Ø¥Ø²Ø§Ù„Ø© Ø¹Ø¯Ø§Ø¯ Ø§Ù„Ø±Ø³Ø§Ø¦Ù„ Ø¨Ù†Ø§Ø¡Ù‹ Ø¹Ù„Ù‰ Ø·Ù„Ø¨ Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù…
+      String preview = '...';
+      if (lastMsg != null) {
+        switch (lastMsg['message_type']) {
+          case 'nda':
+            preview = 'ðŸ“„ NDA Agreement';
+            break;
+          case 'image':
+            preview = 'ðŸ“· Image';
+            break;
+          case 'document':
+            preview = 'ðŸ“Ž Document';
+            break;
+          default:
+            preview = lastMsg['Message text'] ?? '...';
+        }
+      }
+
       const int unreadCount = 0;
 
       final String timeAgo = lastMsg != null
@@ -5338,7 +5700,8 @@ class ChatSupabaseService {
   Future<List<ChatMessage>> fetchMessages(String chatId) async {
     final rows = await _sb
         .from('message')
-        .select('messageid, "Message text", sender_id, "time stamp"')
+        .select(
+        'messageid, "Message text", sender_id, "time stamp", "is read", message_type')
         .eq('chat_id', chatId)
         .order('time stamp', ascending: true);
 
@@ -5349,12 +5712,13 @@ class ChatSupabaseService {
         text: r['Message text'] ?? '',
         isFromUser: r['sender_id'] == _myId,
         timeLabel: dt != null ? _formatTime(dt) : '',
-        isRead: true,
+        isRead: r['is read'] == true,
+        messageType: r['message_type'] ?? 'text',
       );
     }).toList();
   }
 
-  // â”€â”€ 3. Ø§Ø¨Ø¹Øª Ø±Ø³Ø§Ù„Ø© â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // â”€â”€ 3. Ø¨Ø¹Øª Ø±Ø³Ø§Ù„Ø© Ù†ØµÙŠØ© â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Future<void> sendMessage({
     required String chatId,
     required String text,
@@ -5363,15 +5727,82 @@ class ChatSupabaseService {
       'chat_id': chatId,
       'sender_id': _myId,
       'Message text': text,
-      'is read': true, // ØªÙ… Ø¬Ø¹Ù„Ù‡Ø§ true Ø¯Ø§Ø¦Ù…Ø§Ù‹ Ø¨Ù†Ø§Ø¡Ù‹ Ø¹Ù„Ù‰ Ø·Ù„Ø¨ Ø¥Ø²Ø§Ù„Ø© Ø§Ù„Ù€ seen
+      'is read': false,
+      'message_type': 'text',
     });
   }
 
-  // â”€â”€ 4. âœ… ØªÙ… Ø¥Ø²Ø§Ù„Ø© ÙˆØ¸ÙŠÙØ© Ø¹Ù„Ù‘Ù… Ø±Ø³Ø§Ø¦Ù„ Ø§Ù„Ø·Ø±Ù Ø§Ù„ØªØ§Ù†ÙŠ ÙƒÙ…Ù‚Ø±ÙˆØ¡Ø© Ø¨Ù†Ø§Ø¡Ù‹ Ø¹Ù„Ù‰ Ø§Ù„Ø·Ù„Ø¨
+  // â”€â”€ 4. Ø¨Ø¹Øª Ø·Ù„Ø¨ NDA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Ø§Ù„Ù€ entrepreneur Ø¨ÙŠØ³ØªØ®Ø¯Ù… Ù‡Ø§Ø¯ â€” Ø¨ÙŠØ¨Ø¹Øª Ø±Ø³Ø§Ù„Ø© Ù„Ù„Ù…Ø³ØªØ«Ù…Ø± ÙŠØ·Ù„Ø¨ Ù…Ù†Ù‡ ÙŠÙˆÙ‚Ø¹
+  Future<void> sendNdaRequest({required String chatId}) async {
+    await _sb.from('message').insert({
+      'chat_id': chatId,
+      'sender_id': _myId,
+      'Message text':
+      'Please review and sign the NDA agreement to proceed with viewing the project details.',
+      'is read': false,
+      'message_type': 'nda',
+    });
+  }
 
-  // â”€â”€ 5. âœ… Realtime Ø¯Ø§Ø®Ù„ Ø´Ø§Ø´Ø© Ø§Ù„Ø´Ø§Øª â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // Ø¨Ø¯Ù„ Postgres Changes (ØªØ­ØªØ§Ø¬ Realtime Ù…ÙØ¹Ù‘Ù„ Ø¹Ù„Ù‰ Ø§Ù„Ø¬Ø¯ÙˆÙ„)ØŒ
-  // Ù†Ø³ØªØ®Ø¯Ù… .stream() Ø§Ù„Ù„ÙŠ Ø´ØºÙ‘Ø§Ù„Ø© Ø¯Ø§ÙŠÙ…Ø§Ù‹ Ø¨Ø¯ÙˆÙ† Ø£ÙŠ Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª
+  // â”€â”€ 5. Ø±ÙØ¹ ØµÙˆØ±Ø© ÙˆØ¨Ø¹ØªÙ‡Ø§ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  Future<void> sendImage({
+    required String chatId,
+    required File imageFile,
+  }) async {
+    final ext = imageFile.path.split('.').last;
+    final fileName = '${DateTime.now().millisecondsSinceEpoch}_$_myId.$ext';
+
+    await _sb.storage.from('chat_files').upload(fileName, imageFile);
+
+    final publicUrl =
+    _sb.storage.from('chat_files').getPublicUrl(fileName);
+
+    await _sb.from('message').insert({
+      'chat_id': chatId,
+      'sender_id': _myId,
+      'Message text': publicUrl,
+      'is read': false,
+      'message_type': 'image',
+    });
+  }
+
+  // â”€â”€ 6. Ø±ÙØ¹ Ù…Ù„Ù ÙˆØ¨Ø¹ØªÙ‡ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  Future<void> sendDocument({
+    required String chatId,
+    required Uint8List bytes,
+    required String fileName,
+  }) async {
+    final storageName =
+        '${DateTime.now().millisecondsSinceEpoch}_$fileName';
+
+    await _sb.storage
+        .from('chat_files')
+        .uploadBinary(storageName, bytes);
+
+    final publicUrl =
+    _sb.storage.from('chat_files').getPublicUrl(storageName);
+
+    await _sb.from('message').insert({
+      'chat_id': chatId,
+      'sender_id': _myId,
+      'Message text': publicUrl,
+      'is read': false,
+      'message_type': 'document',
+    });
+  }
+
+  // â”€â”€ 7. Ø¹Ù„Ù‘Ù… Ø§Ù„Ø±Ø³Ø§Ø¦Ù„ ÙƒÙ…Ù‚Ø±ÙˆØ¡Ø© â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  Future<void> markMessagesAsRead(String chatId) async {
+    await _sb
+        .from('message')
+        .update({'is read': true})
+        .eq('chat_id', chatId)
+        .neq('sender_id', _myId)
+        .eq('is read', false);
+  }
+
+  // â”€â”€ 8. Stream Ø±Ø³Ø§Ø¦Ù„ Ø´Ø§Øª Ù…Ø¹ÙŠÙ† â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Stream<List<Map<String, dynamic>>> streamMessages(String chatId) {
     return _sb
         .from('message')
@@ -5380,20 +5811,17 @@ class ChatSupabaseService {
         .order('time stamp', ascending: true);
   }
 
-  // â”€â”€ 6. âœ… Realtime Ù„Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ø´Ø§ØªØ§Øª â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // .stream() Ø¹Ù„Ù‰ Ø¬Ø¯ÙˆÙ„ message â€” ØªØªØ­Ø¯Ø« Ø£ÙˆØªÙˆÙ…Ø§ØªÙŠÙƒ Ø¹Ù†Ø¯ Ø£ÙŠ INSERT Ø£Ùˆ UPDATE
+  // â”€â”€ 9. Stream ÙƒÙ„ Ø§Ù„Ø±Ø³Ø§Ø¦Ù„ (Ù„Ù„Ù€ messages list) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Stream<List<Map<String, dynamic>>> streamAllMessages() {
-    return _sb
-        .from('message')
-        .stream(primaryKey: ['messageid']);
+    return _sb.from('message').stream(primaryKey: ['messageid']);
   }
 
-  // â”€â”€ 7. Ø§Ø¹Ù…Ù„ Ø´Ø§Øª Ø¬Ø¯ÙŠØ¯ (Ù„Ùˆ Ù…Ø´ Ù…ÙˆØ¬ÙˆØ¯) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // â”€â”€ 10. Ø¬ÙŠØ¨ Ø£Ùˆ Ø§Ø¹Ù…Ù„ Ø´Ø§Øª â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Future<String> getOrCreateChat({
     required String otherUserId,
     required String ideaId,
   }) async {
-    final iAmEntrepreneur = await _isEntrepreneur();
+    final iAmEntrepreneur = await isEntrepreneur();
     final entrepreneurId = iAmEntrepreneur ? _myId : otherUserId;
     final investorId = iAmEntrepreneur ? otherUserId : _myId;
 
@@ -5420,8 +5848,8 @@ class ChatSupabaseService {
     return created['chat_id'];
   }
 
-  // â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  Future<bool> _isEntrepreneur() async {
+  // â”€â”€ 11. ØªØ­Ù‚Ù‚ Ù…Ù† Ø§Ù„Ù€ role â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  Future<bool> isEntrepreneur() async {
     final row = await _sb
         .from('User')
         .select('role')
@@ -5430,6 +5858,7 @@ class ChatSupabaseService {
     return row?['role'] == 'Entrepreneur';
   }
 
+  // â”€â”€ Helper: format time â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   String _formatTime(DateTime dt) {
     final now = DateTime.now();
     final diff = now.difference(dt);
@@ -5896,14 +6325,14 @@ class ChatContact {
 ``n
 ### File: D:\FlutterProjects\Investra_App\lib\features\messages\domain\entities\chat_message.dart
 `dart
-/// Single line in a thread (outgoing = current user).
 class ChatMessage {
   const ChatMessage({
     required this.id,
     required this.text,
     required this.isFromUser,
     required this.timeLabel,
-    this.isRead = true,
+    required this.isRead,
+    this.messageType = 'text',
   });
 
   final String id;
@@ -5911,16 +6340,9 @@ class ChatMessage {
   final bool isFromUser;
   final String timeLabel;
   final bool isRead;
+  final String messageType;
 
-  ChatMessage copyWith({bool? isRead}) {
-    return ChatMessage(
-      id: id,
-      text: text,
-      isFromUser: isFromUser,
-      timeLabel: timeLabel,
-      isRead: isRead ?? this.isRead,
-    );
-  }
+  bool get isNda => messageType == 'nda';
 }
 
 
@@ -5958,6 +6380,7 @@ import 'package:investra/features/messages/data/chat_supabase_service.dart';
 import 'package:investra/features/messages/domain/entities/chat_contact.dart';
 import 'package:investra/features/messages/domain/entities/chat_message.dart';
 import 'package:investra/features/messages/domain/entities/chat_thread_item.dart';
+import 'package:investra/features/messages/presentation/pages/nda_screen.dart';
 import 'package:investra/features/messages/presentation/widgets/chat_bubble.dart';
 import 'package:investra/features/messages/presentation/widgets/chat_attachment_bottom_sheet.dart';
 import 'package:investra/features/messages/presentation/widgets/message_input_bar.dart';
@@ -5976,7 +6399,6 @@ class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _messageController = TextEditingController();
   final ChatSupabaseService _service = ChatSupabaseService();
 
-  // âœ… Ù†Ø³ØªØ®Ø¯Ù… StreamSubscription Ø¨Ø¯Ù„ RealtimeChannel
   StreamSubscription<List<Map<String, dynamic>>>? _streamSub;
 
   List<ChatThreadItem> _items = [];
@@ -5984,18 +6406,17 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isFirstLoad = true;
   int _newMessageCount = 0;
 
-  // Ù†Ø­ØªÙØ¸ Ø¨Ø¢Ø®Ø± Set Ù…Ù† Ø§Ù„Ù€ IDs Ø§Ù„Ù„ÙŠ Ø¹Ù†Ø¯Ù†Ø§ Ø¹Ø´Ø§Ù† Ù†Ø¹Ø±Ù Ø§Ù„Ø¬Ø¯ÙŠØ¯ Ù…Ù† Ø§Ù„Ù‚Ø¯ÙŠÙ…
   final Set<String> _knownIds = {};
 
   ChatContact get _user => widget.user;
   String get _myId => Supabase.instance.client.auth.currentUser!.id;
 
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_handleScroll);
     _startStream();
+    _service.markMessagesAsRead(_user.id);
   }
 
   @override
@@ -6007,9 +6428,7 @@ class _ChatScreenState extends State<ChatScreen> {
     super.dispose();
   }
 
-  // â”€â”€ âœ… Stream ÙŠØ³ØªÙ…Ø¹ Ù„Ø¬Ø¯ÙˆÙ„ message Ù…Ø¨Ø§Ø´Ø±Ø© â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // .stream() Ù…Ù† Supabase Ø´ØºÙ‘Ø§Ù„Ø© Ø¯Ø§ÙŠÙ…Ø§Ù‹ Ø¨Ø¯ÙˆÙ† Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª Realtime
-  // Ø¨ØªØªØ­Ø¯Ø« Ø£ÙˆØªÙˆÙ…Ø§ØªÙŠÙƒ Ø¹Ù†Ø¯ Ø£ÙŠ INSERT Ø£Ùˆ UPDATE ÙÙŠ Ø§Ù„Ù€ chat_id Ø¯Ù‡
+  // â”€â”€ Stream â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   void _startStream() {
     _streamSub = _service.streamMessages(_user.id).listen((rows) {
       if (!mounted) return;
@@ -6023,18 +6442,18 @@ class _ChatScreenState extends State<ChatScreen> {
         final msgId = r['messageid'].toString();
         final dt = DateTime.tryParse(r['time stamp'] ?? '')?.toLocal();
         final isFromUser = r['sender_id'] == myId;
-        const isRead = true; // ØªÙ… Ø¬Ø¹Ù„Ù‡Ø§ true Ø¯Ø§Ø¦Ù…Ø§Ù‹ Ø¨Ù†Ø§Ø¡Ù‹ Ø¹Ù„Ù‰ Ø·Ù„Ø¨ Ø¥Ø²Ø§Ù„Ø© Ø§Ù„Ù€ seen
+        final isRead = r['is read'] == true;
+        final messageType = r['message_type'] ?? 'text';
 
-        // âœ… Ø§ÙƒØªØ´Ø§Ù Ø±Ø³Ø§Ø¦Ù„ Ø¬Ø¯ÙŠØ¯Ø© Ù…Ù† Ø§Ù„Ø·Ø±Ù Ø§Ù„ØªØ§Ù†ÙŠ (Ù…Ø´ Ù…ÙˆØ¬ÙˆØ¯Ø© ÙÙŠ _knownIds)
         if (!isFromUser && !_knownIds.contains(msgId) && !_isFirstLoad) {
           hasNewIncoming = true;
         }
-
         _knownIds.add(msgId);
 
-        const dateLabel = 'TODAY';
+        // â”€â”€ date separator â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        final dateLabel = _dateLabel(dt);
         if (lastDate != dateLabel) {
-          items.add(const ChatDateSeparatorItem(dateLabel));
+          items.add(ChatDateSeparatorItem(dateLabel));
           lastDate = dateLabel;
         }
 
@@ -6044,6 +6463,7 @@ class _ChatScreenState extends State<ChatScreen> {
           isFromUser: isFromUser,
           timeLabel: dt != null ? _formatTimeLocal(dt) : '',
           isRead: isRead,
+          messageType: messageType,
         )));
       }
 
@@ -6055,20 +6475,34 @@ class _ChatScreenState extends State<ChatScreen> {
       });
 
       if (wasFirstLoad) {
-        // Ø£ÙˆÙ„ ØªØ­Ù…ÙŠÙ„ â†’ Ø§Ø³ÙƒØ±ÙˆÙ„ Ù„Ù„Ø£Ø³ÙÙ„ Ø¨Ø¯ÙˆÙ† animation
         WidgetsBinding.instance.addPostFrameCallback(
               (_) => _scrollToBottom(animated: false),
         );
       } else if (hasNewIncoming && !_showJumpToLatest) {
-        // Ø±Ø³Ø§Ù„Ø© Ø¬Ø¯ÙŠØ¯Ø© ÙˆØ£Ù†Ø§ ÙÙŠ Ø§Ù„Ø£Ø³ÙÙ„ â†’ Ø§Ø³ÙƒØ±ÙˆÙ„ ØªÙ„Ù‚Ø§Ø¦ÙŠ
         WidgetsBinding.instance.addPostFrameCallback(
               (_) => _scrollToBottom(animated: true),
         );
       }
+
+      if (hasNewIncoming) {
+        _service.markMessagesAsRead(_user.id);
+      }
     });
   }
 
-  // â”€â”€ scroll helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // â”€â”€ date label â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  String _dateLabel(DateTime? dt) {
+    if (dt == null) return 'TODAY';
+    final now = DateTime.now();
+    final diff = DateTime(now.year, now.month, now.day)
+        .difference(DateTime(dt.year, dt.month, dt.day))
+        .inDays;
+    if (diff == 0) return 'TODAY';
+    if (diff == 1) return 'YESTERDAY';
+    return '${dt.day}/${dt.month}/${dt.year}';
+  }
+
+  // â”€â”€ scroll â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   void _handleScroll() {
     if (!_scrollController.hasClients) return;
     final p = _scrollController.position;
@@ -6103,8 +6537,6 @@ class _ChatScreenState extends State<ChatScreen> {
     if (t.isEmpty) return;
     _messageController.clear();
 
-    // âœ… Optimistic UI â€” Ø£Ø¶Ù Ø§Ù„Ø±Ø³Ø§Ù„Ø© ÙÙˆØ±Ø§Ù‹ Ø¨Ù€ id Ù…Ø¤Ù‚Øª
-    // Ø§Ù„Ù€ stream Ø³ÙŠØ³ØªØ¨Ø¯Ù„Ù‡Ø§ Ø¨Ø§Ù„Ù†Ø³Ø®Ø© Ø§Ù„Ø­Ù‚ÙŠÙ‚ÙŠØ© Ù…Ù† DB ÙÙŠ Ø«ÙˆØ§Ù†Ù
     final tempId = 'local_${DateTime.now().microsecondsSinceEpoch}';
     setState(() {
       _items.add(ChatMessageItem(ChatMessage(
@@ -6113,6 +6545,7 @@ class _ChatScreenState extends State<ChatScreen> {
         isFromUser: true,
         timeLabel: _timeNow(),
         isRead: false,
+        messageType: 'text',
       )));
     });
     WidgetsBinding.instance.addPostFrameCallback(
@@ -6121,19 +6554,48 @@ class _ChatScreenState extends State<ChatScreen> {
 
     try {
       await _service.sendMessage(chatId: _user.id, text: t);
-      // Ø§Ù„Ù€ stream Ù‡ÙŠØªØ­Ø¯Ø« Ø£ÙˆØªÙˆÙ…Ø§ØªÙŠÙƒ Ø¨Ø¹Ø¯ Ø§Ù„Ù€ INSERT ÙˆÙŠØ¶ÙŠÙ Ø§Ù„Ø±Ø³Ø§Ù„Ø© Ø§Ù„Ø­Ù‚ÙŠÙ‚ÙŠØ©
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('ÙØ´Ù„ Ø§Ù„Ø¥Ø±Ø³Ø§Ù„: $e')),
+          SnackBar(content: Text('Failed to send: $e')),
         );
-        // Ø§Ø­Ø°Ù Ø§Ù„Ù€ optimistic message Ù„Ùˆ ÙØ´Ù„ Ø§Ù„Ø¥Ø±Ø³Ø§Ù„
         setState(() {
           _items.removeWhere(
                   (i) => i is ChatMessageItem && i.message.id == tempId);
         });
       }
     }
+  }
+
+  // â”€â”€ Ø§Ø³ØªÙ‚Ø¨Ø§Ù„ attachment (ØµÙˆØ±Ø©/Ù…Ù„Ù) Ù…Ù† Ø§Ù„Ø¨ÙˆØªÙˆÙ… Ø´ÙŠØª ÙˆØ¨Ø¹ØªÙ‡ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  Future<void> _onAttachmentPicked(PendingAttachment attachment) async {
+    try {
+      if (attachment.type == PendingAttachmentType.image) {
+        await _service.sendImage(
+          chatId: _user.id,
+          imageFile: attachment.file!,
+        );
+      } else {
+        await _service.sendDocument(
+          chatId: _user.id,
+          bytes: attachment.bytes!,
+          fileName: attachment.fileName!,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to send attachment: $e')),
+        );
+      }
+    }
+  }
+
+  // â”€â”€ ÙØªØ­ NDA Ù„Ù„Ù…Ø³ØªØ«Ù…Ø± â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  void _openNdaForSigning() {
+    Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => NdaScreen(chatId: _user.id)),
+    );
   }
 
   String _formatTimeLocal(DateTime dt) {
@@ -6250,9 +6712,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 ListView.builder(
                   controller: _scrollController,
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
+                      horizontal: 12, vertical: 8),
                   itemCount: _items.length,
                   itemBuilder: (context, index) {
                     final item = _items[index];
@@ -6265,6 +6725,10 @@ class _ChatScreenState extends State<ChatScreen> {
                         showPeerAvatar: !item.message.isFromUser,
                         peerAvatarUrl: _user.avatarUrl,
                         peerInitial: _user.fullName,
+                        onSignNda: item.message.isNda &&
+                            !item.message.isFromUser
+                            ? _openNdaForSigning
+                            : null,
                       );
                     }
                     return const SizedBox.shrink();
@@ -6285,9 +6749,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           borderRadius: BorderRadius.circular(20),
                           child: Padding(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 8,
-                            ),
+                                horizontal: 16, vertical: 8),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
@@ -6320,7 +6782,11 @@ class _ChatScreenState extends State<ChatScreen> {
           MessageInputBar(
             controller: _messageController,
             onSend: _send,
-            onAttachment: () => ChatAttachmentBottomSheet.show(context),
+            onAttachment: () => ChatAttachmentBottomSheet.show(
+              context,
+              chatId: _user.id,
+              onAttachmentPicked: _onAttachmentPicked,
+            ),
           ),
         ],
       ),
@@ -6612,7 +7078,7 @@ class _MessagesListScreenState extends State<MessagesListScreen> {
                           builder: (_) => ChatScreen(user: c),
                         ),
                       );
-                      // âœ… Ø¨Ø¹Ø¯ Ø§Ù„Ø±Ø¬ÙˆØ¹ Ù…Ø¨Ø§Ø´Ø±Ø© â†’ Ø£Ø¹Ø¯ Ø§Ù„ØªØ­Ù…ÙŠÙ„
+
                       _loadChats();
                     },
                   );
@@ -6627,12 +7093,653 @@ class _MessagesListScreenState extends State<MessagesListScreen> {
 }
 
 ``n
+### File: D:\FlutterProjects\Investra_App\lib\features\messages\presentation\pages\nda_screen.dart
+`dart
+import 'dart:typed_data';
+import 'package:flutter/material.dart';
+import 'package:investra/core/styles/colors.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:signature/signature.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+class _NdaData {
+  final String entrepreneurName;
+  final String entrepreneurId;
+  final String investorName;
+  final String investorId;
+  final String ideaTitle;
+  final String ideaId;
+
+  const _NdaData({
+    required this.entrepreneurName,
+    required this.entrepreneurId,
+    required this.investorName,
+    required this.investorId,
+    required this.ideaTitle,
+    required this.ideaId,
+  });
+}
+
+class NdaScreen extends StatefulWidget {
+  const NdaScreen({super.key, required this.chatId});
+  final String chatId;
+
+  @override
+  State<NdaScreen> createState() => _NdaScreenState();
+}
+
+class _NdaScreenState extends State<NdaScreen> {
+  final _supabase = Supabase.instance.client;
+
+  _NdaData? _ndaData;
+  bool _loading = true;
+  String? _error;
+  bool _isSaving = false;
+
+  late final SignatureController _signatureController;
+
+  String get _myId => _supabase.auth.currentUser!.id;
+  bool get _iAmInvestor => _ndaData?.investorId == _myId;
+
+
+  @override
+  void initState() {
+    super.initState();
+    _signatureController = SignatureController(
+      penStrokeWidth: 2.5,
+      penColor: Colors.black,
+      exportBackgroundColor: Colors.white,
+    );
+    _loadNdaData();
+  }
+
+  @override
+  void dispose() {
+    _signatureController.dispose();
+    super.dispose();
+  }
+
+
+  Future<void> _loadNdaData() async {
+    try {
+      final chatRow = await _supabase
+          .from('chat')
+          .select('entrepreneur_id, investor_id, idea_id')
+          .eq('chat_id', widget.chatId)
+          .single();
+
+      final entrepreneurId = chatRow['entrepreneur_id'] as String;
+      final investorId     = chatRow['investor_id']     as String;
+      final ideaId         = chatRow['idea_id']         as String;
+
+      final entrepreneurRow = await _supabase
+          .from('User').select('FullName').eq('userid', entrepreneurId).single();
+      final investorRow = await _supabase
+          .from('User').select('FullName').eq('userid', investorId).single();
+      final ideaRow = await _supabase
+          .from('ideas').select('title').eq('id', ideaId).single();
+
+      if (mounted) {
+        setState(() {
+          _ndaData = _NdaData(
+            entrepreneurName: entrepreneurRow['FullName'] as String,
+            entrepreneurId:   entrepreneurId,
+            investorName:     investorRow['FullName']     as String,
+            investorId:       investorId,
+            ideaTitle:        ideaRow['title']            as String,
+            ideaId:           ideaId,
+          );
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() { _error = 'Failed to load NDA: $e'; _loading = false; });
+    }
+  }
+
+  Future<Uint8List> _generatePdf(Uint8List signatureBytes) async {
+    final pdf  = pw.Document();
+    final d    = _ndaData!;
+    final now  = DateTime.now();
+    final date = '${now.year}-${now.month.toString().padLeft(2,'0')}-${now.day.toString().padLeft(2,'0')}';
+
+    // ØªØ­ÙˆÙŠÙ„ Ø§Ù„ØªÙˆÙ‚ÙŠØ¹ Ù„Ù€ PdfImage
+    final sigImage = pw.MemoryImage(signatureBytes);
+
+    // Ø£Ù„ÙˆØ§Ù†
+    const primaryColor = PdfColor.fromInt(0xFF1A3C5E);
+    const lightGray    = PdfColor.fromInt(0xFFF5F5F5);
+    const green        = PdfColor.fromInt(0xFF4CAF50);
+
+    pw.TextStyle bodyStyle()    => const pw.TextStyle(fontSize: 11, lineSpacing: 1.5);
+    pw.TextStyle boldStyle()    => pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold, lineSpacing: 1.5);
+    pw.TextStyle sectionStyle() => pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold, color: primaryColor);
+    pw.TextStyle titleStyle()   => pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, color: primaryColor);
+
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(40),
+        header: (context) => pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.center,
+          children: [
+            pw.Text('NON-DISCLOSURE AGREEMENT (NDA)', style: titleStyle()),
+            pw.SizedBox(height: 4),
+            pw.Text('Generated through Investra Platform',
+                style: pw.TextStyle(fontSize: 9, color: PdfColors.grey600)),
+            pw.Divider(color: primaryColor, thickness: 1),
+            pw.SizedBox(height: 8),
+          ],
+        ),
+        footer: (context) => pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
+            pw.Text('Confidential Document',
+                style: pw.TextStyle(fontSize: 8, color: PdfColors.grey500)),
+            pw.Text('Page ${context.pageNumber} of ${context.pagesCount}',
+                style: pw.TextStyle(fontSize: 8, color: PdfColors.grey500)),
+          ],
+        ),
+        build: (context) => [
+
+          pw.Text('This Agreement is entered into on $date between:', style: bodyStyle()),
+          pw.SizedBox(height: 12),
+
+          pw.Container(
+            padding: const pw.EdgeInsets.all(12),
+            decoration: pw.BoxDecoration(
+              color: lightGray,
+              borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
+            ),
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text('Entrepreneur (Disclosing Party):', style: sectionStyle()),
+                pw.SizedBox(height: 4),
+                pw.RichText(text: pw.TextSpan(children: [
+                  pw.TextSpan(text: 'Name: ', style: boldStyle()),
+                  pw.TextSpan(text: d.entrepreneurName, style: bodyStyle()),
+                ])),
+                pw.RichText(text: pw.TextSpan(children: [
+                  pw.TextSpan(text: 'User ID: ', style: boldStyle()),
+                  pw.TextSpan(text: d.entrepreneurId, style: bodyStyle()),
+                ])),
+                pw.SizedBox(height: 10),
+                pw.Text('Investor (Receiving Party):', style: sectionStyle()),
+                pw.SizedBox(height: 4),
+                pw.RichText(text: pw.TextSpan(children: [
+                  pw.TextSpan(text: 'Name: ', style: boldStyle()),
+                  pw.TextSpan(text: d.investorName, style: bodyStyle()),
+                ])),
+                pw.RichText(text: pw.TextSpan(children: [
+                  pw.TextSpan(text: 'User ID: ', style: boldStyle()),
+                  pw.TextSpan(text: d.investorId, style: bodyStyle()),
+                ])),
+                pw.SizedBox(height: 10),
+                pw.RichText(text: pw.TextSpan(children: [
+                  pw.TextSpan(text: 'Idea Title: ', style: boldStyle()),
+                  pw.TextSpan(text: d.ideaTitle, style: bodyStyle()),
+                ])),
+              ],
+            ),
+          ),
+
+          pw.SizedBox(height: 16),
+
+
+          _pdfSection('1. Purpose', sectionStyle(), bodyStyle(),
+              'The purpose of this Agreement is to allow the Entrepreneur to share confidential business information, startup ideas, documents, feasibility studies, business plans, contracts, and related materials through the Investra platform for evaluation and potential investment discussions.'),
+
+          _pdfSection('2. Confidential Information', sectionStyle(), bodyStyle(),
+              'Confidential information includes but is not limited to:\n'
+                  'â€¢ Business ideas and concepts\n'
+                  'â€¢ Business plans\n'
+                  'â€¢ Financial projections\n'
+                  'â€¢ Feasibility studies\n'
+                  'â€¢ Uploaded documents\n'
+                  'â€¢ Product concepts\n'
+                  'â€¢ Chat discussions and shared materials\n'
+                  'â€¢ Contracts and investment documents\n'
+                  'â€¢ Any files exchanged through the platform'),
+
+          _pdfSection('3. Obligations of the Investor', sectionStyle(), bodyStyle(),
+              'The Investor agrees:\n'
+                  'â€¢ Not to copy, reproduce, distribute, or disclose confidential information to third parties\n'
+                  'â€¢ Not to use shared information for personal, commercial, or competitive benefit without written permission\n'
+                  'â€¢ Not to claim ownership of the entrepreneur\'s ideas, documents, or intellectual property\n'
+                  'â€¢ To use the information only for evaluation and investment purposes\n'
+                  'â€¢ To maintain confidentiality of all exchanged information'),
+
+          _pdfSection('4. Ownership Rights', sectionStyle(), bodyStyle(),
+              'All intellectual property rights, business ownership rights, and idea ownership remain exclusively with the Entrepreneur.\n\n'
+                  'Signing this Agreement does not transfer ownership, licensing rights, or usage rights to the Investor.'),
+
+          _pdfSection('5. Duration', sectionStyle(), bodyStyle(),
+              'This Agreement shall remain valid for three (3) years from the signing date.'),
+
+          _pdfSection('6. Breach of Agreement', sectionStyle(), bodyStyle(),
+              'Unauthorized disclosure, copying, misuse, or unauthorized ownership claims regarding confidential information may result in legal action according to applicable laws.'),
+
+          _pdfSection('7. Platform Record Acknowledgment', sectionStyle(), bodyStyle(),
+              'Both parties acknowledge that this agreement, related files, signatures, timestamps, and transaction records may be stored within the Investra platform for documentation and verification purposes.'),
+
+          _pdfSection('8. Acceptance', sectionStyle(), bodyStyle(),
+              'By signing below, both parties acknowledge that they have read, understood, and accepted this agreement.'),
+
+          pw.Divider(color: primaryColor),
+          pw.SizedBox(height: 12),
+
+
+          pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              // Entrepreneur
+              pw.Expanded(
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text('Entrepreneur Signature:', style: sectionStyle()),
+                    pw.SizedBox(height: 4),
+                    pw.Text('Name: ${d.entrepreneurName}', style: bodyStyle()),
+                    pw.Text('Date: $date', style: bodyStyle()),
+                    pw.SizedBox(height: 8),
+                    pw.Container(
+                      padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: pw.BoxDecoration(
+                        color: green,
+                        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+                      ),
+                      child: pw.Text('âœ“ Signed by Entrepreneur',
+                          style: pw.TextStyle(fontSize: 9, color: PdfColors.white,
+                              fontWeight: pw.FontWeight.bold)),
+                    ),
+                  ],
+                ),
+              ),
+              pw.SizedBox(width: 20),
+
+              pw.Expanded(
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text('Investor Signature:', style: sectionStyle()),
+                    pw.SizedBox(height: 4),
+                    pw.Text('Name: ${d.investorName}', style: bodyStyle()),
+                    pw.Text('Date: $date', style: bodyStyle()),
+                    pw.SizedBox(height: 8),
+
+                    pw.Container(
+                      height: 80,
+                      width: 200,
+                      decoration: pw.BoxDecoration(
+                        border: pw.Border.all(color: primaryColor, width: 0.8),
+                        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+                        color: PdfColors.white,
+                      ),
+                      child: pw.Image(sigImage, fit: pw.BoxFit.contain),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          pw.SizedBox(height: 16),
+          pw.Center(
+            child: pw.Text(
+              'Generated through Investra Platform Â· Confidential Document',
+              style: pw.TextStyle(fontSize: 8, color: PdfColors.grey500),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    return pdf.save();
+  }
+
+  pw.Widget _pdfSection(String title, pw.TextStyle titleStyle,
+      pw.TextStyle bodyStyle, String body) {
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Text(title, style: titleStyle),
+        pw.SizedBox(height: 4),
+        pw.Text(body, style: bodyStyle),
+        pw.SizedBox(height: 12),
+      ],
+    );
+  }
+
+
+  Future<void> _submit() async {
+    if (_signatureController.isEmpty || _ndaData == null) return;
+    setState(() => _isSaving = true);
+
+    try {
+
+      final Uint8List? signatureBytes = await _signatureController.toPngBytes();
+      if (signatureBytes == null) throw Exception('Could not export signature');
+
+
+      final pdfBytes = await _generatePdf(signatureBytes);
+
+
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final fileName  = 'signed_NDA_${widget.chatId}_$timestamp.pdf';
+
+      await _supabase.storage
+          .from('Signed NDA Files')
+          .uploadBinary(
+        fileName,
+        pdfBytes,
+        fileOptions: const FileOptions(contentType: 'application/pdf'),
+      );
+
+
+      final signedUrl = _supabase.storage
+          .from('Signed NDA Files')
+          .getPublicUrl(fileName);
+
+
+      await _supabase.from('nda_agreement').insert({
+        'investor_id':    _ndaData!.investorId,
+        'entrepreneur_id': _ndaData!.entrepreneurId,
+        'idea_id':        _ndaData!.ideaId,
+        'chat_id':        widget.chatId,
+        'signed_pdf_url': signedUrl,
+        'status':         'signed',
+        'signed_at':      DateTime.now().toIso8601String(),
+      });
+
+
+      await _supabase.from('notifications').insert({
+        'user_id':  _ndaData!.entrepreneurId,
+        'title':    'NDA Signed âœ“',
+        'content':  '${_ndaData!.investorName} has signed the NDA for "${_ndaData!.ideaTitle}"',
+        'type':     'nda_signed',
+        'is_read':  false,
+        'idea_id':  _ndaData!.ideaId,
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('NDA signed and saved successfully âœ“'),
+            backgroundColor: AppColors.primaryColor,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        Navigator.of(context).pop(true);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Scaffold(
+      backgroundColor: theme.scaffoldBackgroundColor,
+      appBar: AppBar(
+        title: Text('NDA Agreement',
+            style: theme.textTheme.titleMedium?.copyWith(
+                color: theme.colorScheme.primary, fontWeight: FontWeight.bold)),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded),
+          color: theme.colorScheme.primary,
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+          ? Center(child: Padding(padding: const EdgeInsets.all(24),
+          child: Text(_error!, textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium?.copyWith(color: Colors.red))))
+          : _buildContent(theme),
+    );
+  }
+
+  Widget _buildContent(ThemeData theme) {
+    final d    = _ndaData!;
+    final now  = DateTime.now();
+    final date = '${now.year}-${now.month.toString().padLeft(2,'0')}-${now.day.toString().padLeft(2,'0')}';
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: theme.cardColor,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: theme.colorScheme.primary.withOpacity(0.15)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(child: Column(children: [
+                  Text('NON-DISCLOSURE AGREEMENT',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold, letterSpacing: 0.5),
+                      textAlign: TextAlign.center),
+                  const SizedBox(height: 4),
+                  Text('(NDA)', style: theme.textTheme.titleSmall
+                      ?.copyWith(fontWeight: FontWeight.bold)),
+                ])),
+                const SizedBox(height: 16),
+                _ndaText('This Non-Disclosure Agreement ("Agreement") is entered into on $date between:'),
+                const SizedBox(height: 12),
+                _sectionLabel('Entrepreneur (Disclosing Party):'),
+                _ndaField('Name', d.entrepreneurName),
+                _ndaField('User ID', d.entrepreneurId),
+                const SizedBox(height: 8),
+                _sectionLabel('Investor (Receiving Party):'),
+                _ndaField('Name', d.investorName),
+                _ndaField('User ID', d.investorId),
+                const SizedBox(height: 8),
+                _sectionLabel('Idea Title:'),
+                _ndaText(d.ideaTitle, bold: true, color: theme.colorScheme.primary),
+                const SizedBox(height: 16),
+                _divider(),
+                _flutterSection('1. Purpose',
+                    'The purpose of this Agreement is to allow the Entrepreneur to share confidential business information, startup ideas, documents, feasibility studies, business plans, contracts, and related materials through the Investra platform for evaluation and potential investment discussions.'),
+                _flutterSection('2. Confidential Information',
+                    'Confidential information includes but is not limited to:\nâ€¢ Business ideas and concepts\nâ€¢ Business plans\nâ€¢ Financial projections\nâ€¢ Feasibility studies\nâ€¢ Uploaded documents\nâ€¢ Product concepts\nâ€¢ Chat discussions and shared materials\nâ€¢ Contracts and investment documents\nâ€¢ Any files exchanged through the platform'),
+                _flutterSection('3. Obligations of the Investor',
+                    'The Investor agrees:\nâ€¢ Not to copy, reproduce, distribute, or disclose confidential information to third parties\nâ€¢ Not to use shared information for personal, commercial, or competitive benefit without written permission\nâ€¢ Not to claim ownership of the entrepreneur\'s ideas, documents, or intellectual property\nâ€¢ To use the information only for evaluation and investment purposes\nâ€¢ To maintain confidentiality of all exchanged information'),
+                _flutterSection('4. Ownership Rights',
+                    'All intellectual property rights, business ownership rights, and idea ownership remain exclusively with the Entrepreneur.\n\nSigning this Agreement does not transfer ownership, licensing rights, or usage rights to the Investor.'),
+                _flutterSection('5. Duration',
+                    'This Agreement shall remain valid for three (3) years from the signing date.'),
+                _flutterSection('6. Breach of Agreement',
+                    'Unauthorized disclosure, copying, misuse, or unauthorized ownership claims regarding confidential information may result in legal action according to applicable laws.'),
+                _flutterSection('7. Platform Record Acknowledgment',
+                    'Both parties acknowledge that this agreement, related files, signatures, timestamps, and transaction records may be stored within the Investra platform for documentation and verification purposes.'),
+                _flutterSection('8. Acceptance',
+                    'By signing below, both parties acknowledge that they have read, understood, and accepted this agreement.'),
+                _divider(),
+                _sectionLabel('Entrepreneur Signature:'),
+                _ndaField('Name', d.entrepreneurName),
+                _ndaField('Date', date),
+                const SizedBox(height: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.green.withOpacity(0.4)),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    const Icon(Icons.check_circle_outline, color: Colors.green, size: 16),
+                    const SizedBox(width: 6),
+                    Text('Signed by Entrepreneur',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                            color: Colors.green, fontWeight: FontWeight.w600)),
+                  ]),
+                ),
+                const SizedBox(height: 6),
+                Text('Generated through Investra Platform Â· Confidential Document',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onSurface.withOpacity(0.4), fontSize: 10)),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 24),
+
+          // signature+ submit
+          if (_iAmInvestor) ...[
+            Text('Investor Signature',
+                style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.bold, color: theme.colorScheme.primary)),
+            const SizedBox(height: 4),
+            Text('Sign in the box below using your finger',
+                style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurface.withOpacity(0.55))),
+            const SizedBox(height: 10),
+            Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                    color: theme.colorScheme.primary.withOpacity(0.4), width: 1.5),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(13),
+                child: Signature(
+                  controller: _signatureController,
+                  height: 180,
+                  backgroundColor: Colors.white,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: () => _signatureController.clear(),
+                icon: const Icon(Icons.refresh_rounded, size: 16, color: Colors.red),
+                label: const Text('Clear',
+                    style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600)),
+              ),
+            ),
+            _ndaField('Name', d.investorName),
+            _ndaField('Date', date),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton(
+                onPressed: _isSaving ? null : _submit,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primaryColor,
+                  disabledBackgroundColor: AppColors.primaryColor.withOpacity(0.4),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+                child: _isSaving
+                    ? const SizedBox(width: 22, height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))
+                    : const Text('Submit & Sign NDA',
+                    style: TextStyle(color: Colors.white,
+                        fontWeight: FontWeight.bold, fontSize: 15)),
+              ),
+            ),
+          ] else ...[
+
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF8E1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFF59E0B).withOpacity(0.4)),
+              ),
+              child: Row(children: [
+                const Icon(Icons.hourglass_empty_rounded,
+                    color: Color(0xFFF59E0B), size: 22),
+                const SizedBox(width: 12),
+                Expanded(child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Waiting for investor signature',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                            color: const Color(0xFFF59E0B), fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 2),
+                    Text('The investor will receive a request to sign this NDA.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                            color: const Color(0xFFF59E0B).withOpacity(0.8))),
+                  ],
+                )),
+              ]),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+
+  Widget _ndaText(String t, {bool bold = false, Color? color}) => Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Text(t, style: TextStyle(fontSize: 13,
+          fontWeight: bold ? FontWeight.w600 : FontWeight.normal,
+          color: color, height: 1.5)));
+
+  Widget _sectionLabel(String t) => Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Text(t, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)));
+
+  Widget _ndaField(String label, String value) => Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: RichText(text: TextSpan(
+          style: const TextStyle(fontSize: 13, color: Colors.black87),
+          children: [
+            TextSpan(text: '$label: ', style: const TextStyle(fontWeight: FontWeight.w500)),
+            TextSpan(text: value),
+          ])));
+
+  Widget _flutterSection(String title, String body) => Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, height: 1.6)),
+        Text(body,  style: const TextStyle(fontSize: 13, height: 1.55)),
+      ]));
+
+  Widget _divider() => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Divider(color: AppColors.primaryColor.withOpacity(0.2), thickness: 1));
+}
+
+``n
 ### File: D:\FlutterProjects\Investra_App\lib\features\messages\presentation\widgets\chat_attachment_bottom_sheet.dart
 `dart
+import 'dart:io';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:investra/core/styles/colors.dart';
+import 'package:investra/features/messages/data/chat_supabase_service.dart';
+import 'package:investra/features/messages/presentation/pages/nda_screen.dart';
+import 'package:investra/features/messages/presentation/widgets/message_input_bar.dart';
 
 class ChatAttachmentBottomSheet extends StatelessWidget {
   const ChatAttachmentBottomSheet({
@@ -6646,7 +7753,11 @@ class ChatAttachmentBottomSheet extends StatelessWidget {
   final Future<void> Function() onImageTap;
   final Future<void> Function() onNdaTap;
 
-  static Future<void> show(BuildContext context) {
+  static Future<void> show(
+      BuildContext context, {
+        required String chatId,
+        required void Function(PendingAttachment) onAttachmentPicked,
+      }) {
     return showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
@@ -6655,58 +7766,88 @@ class ChatAttachmentBottomSheet extends StatelessWidget {
         return ChatAttachmentBottomSheet(
           onDocumentTap: () async {
             Navigator.of(sheetContext).pop();
-            await pickDocument(context);
+            final attachment = await _pickDocument(context);
+            if (attachment != null) onAttachmentPicked(attachment);
           },
           onImageTap: () async {
             Navigator.of(sheetContext).pop();
-            await _pickImageFromGallery(context);
+            final attachment = await _pickImage(context);
+            if (attachment != null) onAttachmentPicked(attachment);
           },
           onNdaTap: () async {
             Navigator.of(sheetContext).pop();
-            _onNdaClicked();
+
+            final service = ChatSupabaseService();
+            final isEntrepreneur = await service.isEntrepreneur();
+            if (!context.mounted) return;
+
+            if (isEntrepreneur) {
+              try {
+                await service.sendNdaRequest(chatId: chatId);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('NDA request sent to investor âœ“'),
+                      backgroundColor: AppColors.primaryColor,
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Failed to send NDA: $e'),
+                      backgroundColor: Colors.red,
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+              }
+            } else {
+              await Navigator.of(context).push<bool>(
+                MaterialPageRoute(
+                  builder: (_) => NdaScreen(chatId: chatId),
+                ),
+              );
+            }
           },
         );
       },
     );
   }
 
-  /// Shared document picker (same flow as the attachment sheet "Document" action).
-  static Future<void> pickDocument(
-    BuildContext context, {
-    void Function(String fileName)? onFilePicked,
-  }) async {
-    final result = await FilePicker.platform.pickFiles();
-    if (result == null || result.files.isEmpty) return;
-
-    final selectedFile = result.files.single;
-    if (!context.mounted) return;
-
-    onFilePicked?.call(selectedFile.name);
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Selected document: ${selectedFile.name}'),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-  }
-
-  static Future<void> _pickImageFromGallery(BuildContext context) async {
+  static Future<PendingAttachment?> _pickImage(BuildContext context) async {
     final picker = ImagePicker();
-    final image = await picker.pickImage(source: ImageSource.gallery);
-    if (image == null) return;
-    if (!context.mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Selected image: ${image.name}'),
-        behavior: SnackBarBehavior.floating,
-      ),
+    final picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
     );
+    if (picked == null) return null;
+    return PendingAttachment.image(file: File(picked.path));
   }
 
-  static void _onNdaClicked() {
-    debugPrint('NDA Clicked');
+  static Future<PendingAttachment?> _pickDocument(BuildContext context) async {
+    final result = await FilePicker.platform.pickFiles(withData: true);
+    if (result == null || result.files.isEmpty) return null;
+
+    final file = result.files.single;
+    if (file.bytes == null) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not read file'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return null;
+    }
+
+    return PendingAttachment.document(
+      bytes: file.bytes!,
+      fileName: file.name,
+    );
   }
 
   @override
@@ -6714,9 +7855,8 @@ class ChatAttachmentBottomSheet extends StatelessWidget {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final surfaceColor = isDark ? const Color(0xFF1B2635) : AppColors.bgColor;
-    final tileColor = isDark
-        ? const Color(0xFF233144)
-        : AppColors.secondary2Color;
+    final tileColor =
+    isDark ? const Color(0xFF233144) : AppColors.secondary2Color;
     final titleColor = theme.colorScheme.onSurface;
     final subtitleColor = theme.colorScheme.onSurface.withValues(alpha: 0.65);
 
@@ -6768,7 +7908,7 @@ class ChatAttachmentBottomSheet extends StatelessWidget {
                 _AttachmentActionTile(
                   icon: Icons.assignment_outlined,
                   title: 'Contract (NDA)',
-                  subtitle: 'Share NDA details',
+                  subtitle: 'Send NDA request to investor',
                   iconColor: const Color(0xFFF59E0B),
                   tileColor: tileColor,
                   titleColor: titleColor,
@@ -6860,7 +8000,6 @@ class _AttachmentActionTile extends StatelessWidget {
   }
 }
 
-
 ``n
 ### File: D:\FlutterProjects\Investra_App\lib\features\messages\presentation\widgets\chat_bubble.dart
 `dart
@@ -6877,17 +8016,53 @@ class ChatBubble extends StatelessWidget {
     this.showPeerAvatar = true,
     this.peerAvatarUrl,
     this.peerInitial,
+    this.onSignNda,
   });
 
   final ChatMessage message;
   final bool showPeerAvatar;
   final String? peerAvatarUrl;
   final String? peerInitial;
+  final VoidCallback? onSignNda;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    // â”€â”€ NDA bubble â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    if (message.isNda) {
+      return _NdaBubble(
+        isOutgoing: message.isFromUser,
+        timeLabel: message.timeLabel,
+        isRead: message.isRead,
+        onSignNda: onSignNda,
+        showPeerAvatar: showPeerAvatar,
+        peerAvatarUrl: peerAvatarUrl,
+        peerInitial: peerInitial,
+      );
+    }
+
+    // â”€â”€ Image bubble â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    if (message.messageType == 'image') {
+      return _ImageBubble(
+        message: message,
+        showPeerAvatar: showPeerAvatar,
+        peerAvatarUrl: peerAvatarUrl,
+        peerInitial: peerInitial,
+      );
+    }
+
+    // â”€â”€ Document bubble â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    if (message.messageType == 'document') {
+      return _DocumentBubble(
+        message: message,
+        showPeerAvatar: showPeerAvatar,
+        peerAvatarUrl: peerAvatarUrl,
+        peerInitial: peerInitial,
+      );
+    }
+
+    // â”€â”€ Text bubble (default) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     final isOutgoing = message.isFromUser;
+    final theme = Theme.of(context);
 
     final bubble = ConstrainedBox(
       constraints: BoxConstraints(
@@ -6895,7 +8070,7 @@ class ChatBubble extends StatelessWidget {
       ),
       child: Column(
         crossAxisAlignment:
-            isOutgoing ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        isOutgoing ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
           DecoratedBox(
             decoration: BoxDecoration(
@@ -6910,36 +8085,23 @@ class ChatBubble extends StatelessWidget {
               ),
             ),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              padding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               child: Text(
                 message.text,
                 style: theme.textTheme.bodyMedium?.copyWith(
-                  color: isOutgoing ? AppColors.bgColor : AppColors.blackColor,
+                  color:
+                  isOutgoing ? AppColors.bgColor : AppColors.blackColor,
                   height: 1.35,
                 ),
               ),
             ),
           ),
           const SizedBox(height: 4),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                message.timeLabel,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: AppColors.gray2Color,
-                  fontSize: 11,
-                ),
-              ),
-              if (isOutgoing) ...[
-                const SizedBox(width: 4),
-                const Icon(
-                  Icons.check,
-                  size: 16,
-                  color: AppColors.primaryColor,
-                ),
-              ],
-            ],
+          _TimeRow(
+            timeLabel: message.timeLabel,
+            isOutgoing: isOutgoing,
+            isRead: message.isRead,
           ),
         ],
       ),
@@ -6973,6 +8135,459 @@ class ChatBubble extends StatelessWidget {
   }
 }
 
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// NDA BUBBLE
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+class _NdaBubble extends StatelessWidget {
+  const _NdaBubble({
+    required this.isOutgoing,
+    required this.timeLabel,
+    required this.isRead,
+    required this.onSignNda,
+    required this.showPeerAvatar,
+    this.peerAvatarUrl,
+    this.peerInitial,
+  });
+
+  final bool isOutgoing;
+  final String timeLabel;
+  final bool isRead;
+  final VoidCallback? onSignNda;
+  final bool showPeerAvatar;
+  final String? peerAvatarUrl;
+  final String? peerInitial;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    final bubble = ConstrainedBox(
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.sizeOf(context).width * 0.78,
+      ),
+      child: Column(
+        crossAxisAlignment:
+        isOutgoing ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              color: isOutgoing
+                  ? AppColors.primaryColor.withOpacity(0.12)
+                  : AppColors.secondary1Color,
+              borderRadius: BorderRadius.only(
+                topLeft: const Radius.circular(18),
+                topRight: const Radius.circular(18),
+                bottomLeft: Radius.circular(isOutgoing ? 18 : 4),
+                bottomRight: Radius.circular(isOutgoing ? 4 : 18),
+              ),
+              border: Border.all(
+                color: AppColors.primaryColor.withOpacity(0.35),
+                width: 1.2,
+              ),
+            ),
+            padding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(7),
+                      decoration: BoxDecoration(
+                        color:
+                        const Color(0xFFF59E0B).withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.assignment_outlined,
+                        color: Color(0xFFF59E0B),
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'NDA Agreement',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.primaryColor,
+                          ),
+                        ),
+                        Text(
+                          'Non-Disclosure Agreement',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: AppColors.gray2Color,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                // Ù†Øµ Ø§Ù„Ø±Ø³Ø§Ù„Ø©
+                Text(
+                  isOutgoing
+                      ? 'You requested the investor to sign the NDA.'
+                      : 'Please review and sign the NDA agreement to proceed.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: isOutgoing
+                        ? AppColors.grayColor
+                        : AppColors.blackColor,
+                    height: 1.4,
+                  ),
+                ),
+                // Ø²Ø± Sign NDA Ù„Ù„Ù…Ø³ØªØ«Ù…Ø± ÙÙ‚Ø·
+                if (!isOutgoing && onSignNda != null) ...[
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: onSignNda,
+                      icon: const Icon(Icons.draw_outlined,
+                          size: 16, color: Colors.white),
+                      label: const Text(
+                        'Sign NDA',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primaryColor,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        padding:
+                        const EdgeInsets.symmetric(vertical: 8),
+                      ),
+                    ),
+                  ),
+                ],
+                // Ù„Ù„Ù€ entrepreneur: Pending
+                if (isOutgoing) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.hourglass_empty_rounded,
+                          size: 13, color: Color(0xFFF59E0B)),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Pending investor signature',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: const Color(0xFFF59E0B),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          _TimeRow(
+            timeLabel: timeLabel,
+            isOutgoing: isOutgoing,
+            isRead: isRead,
+          ),
+        ],
+      ),
+    );
+
+    if (isOutgoing) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [bubble],
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          if (showPeerAvatar) ...[
+            _SmallAvatar(avatarUrl: peerAvatarUrl, label: peerInitial),
+            const SizedBox(width: 8),
+          ] else
+            const SizedBox(width: 36),
+          bubble,
+        ],
+      ),
+    );
+  }
+}
+
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// IMAGE BUBBLE
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+class _ImageBubble extends StatelessWidget {
+  const _ImageBubble({
+    required this.message,
+    required this.showPeerAvatar,
+    this.peerAvatarUrl,
+    this.peerInitial,
+  });
+
+  final ChatMessage message;
+  final bool showPeerAvatar;
+  final String? peerAvatarUrl;
+  final String? peerInitial;
+
+  @override
+  Widget build(BuildContext context) {
+    final isOutgoing = message.isFromUser;
+
+    final bubble = ConstrainedBox(
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.sizeOf(context).width * 0.72,
+      ),
+      child: Column(
+        crossAxisAlignment:
+        isOutgoing ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.only(
+              topLeft: const Radius.circular(16),
+              topRight: const Radius.circular(16),
+              bottomLeft: Radius.circular(isOutgoing ? 16 : 4),
+              bottomRight: Radius.circular(isOutgoing ? 4 : 16),
+            ),
+            child: Image.network(
+              message.text,
+              width: 220,
+              height: 180,
+              fit: BoxFit.cover,
+              loadingBuilder: (_, child, progress) => progress == null
+                  ? child
+                  : Container(
+                width: 220,
+                height: 180,
+                color: AppColors.bgGray,
+                child: const Center(
+                    child: CircularProgressIndicator()),
+              ),
+              errorBuilder: (_, __, ___) => Container(
+                width: 220,
+                height: 180,
+                color: AppColors.bgGray,
+                child: const Icon(Icons.broken_image_outlined,
+                    color: AppColors.grayColor),
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          _TimeRow(
+            timeLabel: message.timeLabel,
+            isOutgoing: isOutgoing,
+            isRead: message.isRead,
+          ),
+        ],
+      ),
+    );
+
+    if (isOutgoing) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [bubble],
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          if (showPeerAvatar) ...[
+            _SmallAvatar(avatarUrl: peerAvatarUrl, label: peerInitial),
+            const SizedBox(width: 8),
+          ] else
+            const SizedBox(width: 36),
+          bubble,
+        ],
+      ),
+    );
+  }
+}
+
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// DOCUMENT BUBBLE
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+class _DocumentBubble extends StatelessWidget {
+  const _DocumentBubble({
+    required this.message,
+    required this.showPeerAvatar,
+    this.peerAvatarUrl,
+    this.peerInitial,
+  });
+
+  final ChatMessage message;
+  final bool showPeerAvatar;
+  final String? peerAvatarUrl;
+  final String? peerInitial;
+
+  String get _fileName {
+    try {
+      final uri = Uri.parse(message.text);
+      final raw = uri.pathSegments.last;
+      // Ø§Ø´ÙŠÙ„ Ø§Ù„Ù€ timestamp Ù…Ù† Ø£ÙˆÙ„ Ø§Ù„Ø§Ø³Ù… (Ù…Ø«Ù„Ø§Ù‹ 1777930282671_roadmap.pdf)
+      return raw.replaceAll(RegExp(r'^\d+_'), '');
+    } catch (_) {
+      return 'Document';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isOutgoing = message.isFromUser;
+    final theme = Theme.of(context);
+
+    final bubble = ConstrainedBox(
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.sizeOf(context).width * 0.72,
+      ),
+      child: Column(
+        crossAxisAlignment:
+        isOutgoing ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: isOutgoing
+                  ? AppColors.primaryColor
+                  : AppColors.secondary1Color,
+              borderRadius: BorderRadius.only(
+                topLeft: const Radius.circular(16),
+                topRight: const Radius.circular(16),
+                bottomLeft: Radius.circular(isOutgoing ? 16 : 4),
+                bottomRight: Radius.circular(isOutgoing ? 4 : 16),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.insert_drive_file_outlined,
+                  color: isOutgoing
+                      ? Colors.white70
+                      : AppColors.primaryColor,
+                  size: 22,
+                ),
+                const SizedBox(width: 10),
+                Flexible(
+                  child: Text(
+                    _fileName,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: isOutgoing
+                          ? Colors.white
+                          : AppColors.blackColor,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          _TimeRow(
+            timeLabel: message.timeLabel,
+            isOutgoing: isOutgoing,
+            isRead: message.isRead,
+          ),
+        ],
+      ),
+    );
+
+    if (isOutgoing) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [bubble],
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          if (showPeerAvatar) ...[
+            _SmallAvatar(avatarUrl: peerAvatarUrl, label: peerInitial),
+            const SizedBox(width: 8),
+          ] else
+            const SizedBox(width: 36),
+          bubble,
+        ],
+      ),
+    );
+  }
+}
+
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// SHARED WIDGETS
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+class _TimeRow extends StatelessWidget {
+  const _TimeRow({
+    required this.timeLabel,
+    required this.isOutgoing,
+    required this.isRead,
+  });
+
+  final String timeLabel;
+  final bool isOutgoing;
+  final bool isRead;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          timeLabel,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: AppColors.gray2Color,
+            fontSize: 11,
+          ),
+        ),
+        if (isOutgoing) ...[
+          const SizedBox(width: 4),
+          Icon(
+            isRead ? Icons.done_all : Icons.done,
+            size: 16,
+            color: isRead
+                ? const Color(0xFF34B7F1)
+                : AppColors.gray2Color,
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 class _SmallAvatar extends StatelessWidget {
   const _SmallAvatar({this.avatarUrl, this.label});
 
@@ -6984,22 +8599,24 @@ class _SmallAvatar extends StatelessWidget {
     return CircleAvatar(
       radius: 16,
       backgroundColor: AppColors.bgGray,
-      backgroundImage: avatarUrl != null ? NetworkImage(avatarUrl!) : null,
+      backgroundImage:
+      avatarUrl != null ? NetworkImage(avatarUrl!) : null,
       child: avatarUrl == null
           ? Text(
-              (label != null && label!.isNotEmpty) ? label![0].toUpperCase() : '?',
-              style: const TextStyle(
-                fontSize: 12,
-                color: AppColors.primaryColor,
-                fontWeight: FontWeight.bold,
-              ),
-            )
+        (label != null && label!.isNotEmpty)
+            ? label![0].toUpperCase()
+            : '?',
+        style: const TextStyle(
+          fontSize: 12,
+          color: AppColors.primaryColor,
+          fontWeight: FontWeight.bold,
+        ),
+      )
           : null,
     );
   }
 }
 
-/// Lightbulb topic strip under the app bar.
 class ProjectTopicBanner extends StatelessWidget {
   const ProjectTopicBanner({super.key, required this.text});
 
@@ -7024,9 +8641,9 @@ class ProjectTopicBanner extends StatelessWidget {
             child: Text(
               text,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: AppColors.primaryColor,
-                    fontWeight: FontWeight.w600,
-                  ),
+                color: AppColors.primaryColor,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],
@@ -7046,7 +8663,8 @@ class ChatDatePill extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 16),
       child: Center(
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          padding:
+          const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
             color: AppColors.bgGray,
             borderRadius: BorderRadius.circular(20),
@@ -7054,10 +8672,10 @@ class ChatDatePill extends StatelessWidget {
           child: Text(
             label,
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: AppColors.darkGray,
-                  letterSpacing: 0.8,
-                  fontWeight: FontWeight.w600,
-                ),
+              color: AppColors.darkGray,
+              letterSpacing: 0.8,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
       ),
@@ -7065,14 +8683,51 @@ class ChatDatePill extends StatelessWidget {
   }
 }
 
-
 ``n
 ### File: D:\FlutterProjects\Investra_App\lib\features\messages\presentation\widgets\message_input_bar.dart
 `dart
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:investra/core/constants/app_images.dart';
 import 'package:investra/core/styles/colors.dart';
 import 'package:investra/core/widgets/custom_svg_picture.dart';
+
+// â”€â”€ Ù…Ù„Ù/ØµÙˆØ±Ø© Ø¬Ø§Ù‡Ø²Ø© Ù„Ù„Ø¥Ø±Ø³Ø§Ù„ (Ù‚Ø¨Ù„ Ø§Ù„Ø±ÙØ¹ Ù„Ù€ Supabase) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+enum PendingAttachmentType { image, document }
+
+class PendingAttachment {
+  const PendingAttachment._({
+    required this.type,
+    this.file,
+    this.bytes,
+    this.fileName,
+  });
+
+  final PendingAttachmentType type;
+  final File? file;
+  final Uint8List? bytes;
+  final String? fileName;
+
+  factory PendingAttachment.image({required File file}) {
+    return PendingAttachment._(
+      type: PendingAttachmentType.image,
+      file: file,
+    );
+  }
+
+  factory PendingAttachment.document({
+    required Uint8List bytes,
+    required String fileName,
+  }) {
+    return PendingAttachment._(
+      type: PendingAttachmentType.document,
+      bytes: bytes,
+      fileName: fileName,
+    );
+  }
+}
 
 class MessageInputBar extends StatelessWidget {
   const MessageInputBar({
@@ -7175,7 +8830,6 @@ class MessageInputBar extends StatelessWidget {
     );
   }
 }
-
 
 ``n
 ### File: D:\FlutterProjects\Investra_App\lib\features\messages\presentation\widgets\message_tile.dart
@@ -7328,7 +8982,6 @@ class NotificationModel {
   final DateTime createdAt;
   final String? ideaId;
   final String? requestId;
-  final String status;
 
   NotificationModel({
     required this.id,
@@ -7340,7 +8993,7 @@ class NotificationModel {
     required this.createdAt,
     this.ideaId,
     this.requestId,
-    required this.status,
+
   });
 
   factory NotificationModel.fromJson(Map<String, dynamic> json) {
@@ -7356,7 +9009,7 @@ class NotificationModel {
           : DateTime.now(),
       ideaId: json['idea_id'],
       requestId: json['request_id'],
-      status: json['status'] ?? 'pending',
+     // status: json['status'] ?? 'pending',
     );
   }
 }
@@ -7369,6 +9022,8 @@ import 'package:flutter/material.dart';
 import 'package:investra/core/styles/colors.dart';
 import 'package:investra/features/notifications/data/models/notification_model.dart';
 import 'package:investra/features/profile/presentation/pages/profile_screen.dart';
+import 'package:investra/features/idea_details/domain/idea_logic.dart';
+import 'package:investra/features/home/presentation/pages/entrepreneur_idea_details_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 
@@ -7456,6 +9111,10 @@ class NotificationsScreen extends StatelessWidget {
       ),
       child: InkWell(
         onTap: () async {
+          // ðŸ” ØªØ´Ø®ÙŠØµ Ù…Ø¤Ù‚Øª â€” Ø´ÙˆÙ Ù†ØªÙŠØ¬ØªÙ‡ Ø¨Ø§Ù„Ù€ Debug Console ÙˆØ¨Ø¹Ø¯ÙŠÙ† Ù†Ø´ÙŠÙ„Ù‡
+          debugPrint(
+              'NOTIF DEBUG -> type: ${item.type} | ideaId: ${item.ideaId} | requestId: ${item.requestId}');
+
           try {
             await supabase
                 .from('notifications')
@@ -7465,17 +9124,45 @@ class NotificationsScreen extends StatelessWidget {
             debugPrint("Error marking notification as read: $e");
           }
 
-          if (item.type == 'invest' || item.type == 'chat') {
-            /* // TODO: ÙØªØ­ ØªÙØ§ØµÙŠÙ„ Ø§Ù„ÙÙƒØ±Ø© Ù…Ù† Ø¬Ù‡Ø© Ø±Ø§Ø¦Ø¯ Ø§Ù„Ø£Ø¹Ù…Ø§Ù„
-            if (context.mounted && item.ideaId != null) {
+          // âœ… Ø¥Ø´Ø¹Ø§Ø± Ø§Ø³ØªØ«Ù…Ø§Ø±: ÙˆØ¯Ù‘ÙŠ Ø±Ø§Ø¦Ø¯ Ø§Ù„Ø£Ø¹Ù…Ø§Ù„ Ù„ØµÙØ­Ø© ØªÙØ§ØµÙŠÙ„ Ø§Ù„ÙÙƒØ±Ø© Ù…Ø¨Ø§Ø´Ø±Ø©
+          // Ù…Ø¹ ØªÙ…Ø±ÙŠØ± Ù‡ÙˆÙŠØ© Ø§Ù„Ù…Ø³ØªØ«Ù…Ø± ÙˆØ·Ù„Ø¨ Ø§Ù„Ø§Ø³ØªØ«Ù…Ø§Ø± Ø§Ù„Ù…Ø±ØªØ¨Ø·ØŒ Ø¹Ø´Ø§Ù† Ù„Ù…Ø§ ÙŠØ±ÙØ¹
+          // Ø§Ù„Ø¹Ù‚Ø¯ ØªÙ†Ø¹Ù…Ù„ Ø¹Ù…Ù„ÙŠØ© "Funding" ÙƒØ§Ù…Ù„Ø© (ØªØ­Ø¯ÙŠØ« Ø­Ø§Ù„Ø© Ø§Ù„ÙÙƒØ±Ø© + investments + Ø¥Ø´Ø¹Ø§Ø± Ø±Ø¯).
+          if (item.type == 'invest') {
+            if (item.ideaId == null) {
+              debugPrint('NOTIF DEBUG -> ideaId is null, cannot navigate.');
+              return;
+            }
+
+            final logic = IdeaLogic();
+            final idea = await logic.getIdeaById(item.ideaId!);
+            final investorId = item.requestId != null
+                ? await logic.getInvestorIdFromRequest(item.requestId!)
+                : null;
+
+            debugPrint(
+                'NOTIF DEBUG -> idea: ${idea != null} | investorId: $investorId');
+
+            if (idea != null && context.mounted) {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => EntrepreneurIdeaDetailsScreen(ideaId: item.ideaId),
+                  builder: (context) => EntrepreneurIdeaDetailsScreen(
+                    ideaData: idea,
+                    investorId: investorId,
+                    requestId: item.requestId,
+                  ),
                 ),
               );
             }
-            */
+            return;
+          }
+
+          // âœ… Ø¥Ø´Ø¹Ø§Ø± "ØªÙ… ØªØ£ÙƒÙŠØ¯ Ø§Ù„Ø§Ø³ØªØ«Ù…Ø§Ø±" (ÙŠØµÙ„ Ù„Ù„Ù…Ø³ØªØ«Ù…Ø±) â€” Ø­Ø§Ù„ÙŠØ§Ù‹ Ø¨Ø¯ÙˆÙ† ØªÙ†Ù‚Ù„ Ø®Ø§Øµ
+          if (item.type == 'funded') {
+            return;
+          }
+
+          if (item.type == 'chat') {
             return;
           }
 
@@ -7594,7 +9281,6 @@ class NotificationsScreen extends StatelessWidget {
     }
   }
 }
-
 
 ``n
 ### File: D:\FlutterProjects\Investra_App\lib\features\onboarding\presentation\pages\about_us_screen.dart
@@ -8137,8 +9823,26 @@ class ProfileModel {
   factory ProfileModel.fromJson(Map<String, dynamic> json, [String? userRole]) {
     return ProfileModel.fromView(json, userRole);
   }
-}
 
+  // âœ… ÙŠØ³Ù…Ø­ Ø¨ØªØ­Ø¯ÙŠØ« Ø§Ù„ØµÙˆØ±Ø©/Ø§Ù„Ø¨Ø§ÙŠÙˆ Ù…Ù† Ù…ØµØ¯Ø± Ù…ÙˆØ­Ù‘Ø¯ (Ø¬Ø¯ÙˆÙ„ profile)
+  // Ø¨ÙŠØ³ØªØ®Ø¯Ù… Ø§Ù„Ù‚ÙŠÙ…Ø© Ø§Ù„Ø¬Ø¯ÙŠØ¯Ø© ÙÙ‚Ø· Ù„Ùˆ Ù…ÙˆØ¬ÙˆØ¯Ø© ÙˆØºÙŠØ± ÙØ§Ø¶ÙŠØ©ØŒ ÙˆØ¥Ù„Ø§ Ø¨ÙŠØ±Ø¬Ø¹ Ø§Ù„Ù‚ÙŠÙ…Ø© Ø§Ù„Ù‚Ø¯ÙŠÙ…Ø©
+  ProfileModel copyWith({
+    String? profilePicture,
+    String? bio,
+  }) {
+    return ProfileModel(
+      userId: userId,
+      fullName: fullName,
+      profilePicture: (profilePicture != null && profilePicture.isNotEmpty)
+          ? profilePicture
+          : this.profilePicture,
+      bio: (bio != null && bio.isNotEmpty) ? bio : this.bio,
+      role: role,
+      totalActivity: totalActivity,
+      activeChats: activeChats,
+    );
+  }
+}
 
 ``n
 ### File: D:\FlutterProjects\Investra_App\lib\features\profile\data\services\profile_service.dart
@@ -8152,6 +9856,23 @@ class ProfileService {
 
   Future<ProfileModel?> fetchUserProfile(String userId) async {
     try {
+      // âœ… Ø§Ù„ØµÙˆØ±Ø© ÙˆØ§Ù„Ù€ bio Ø¯Ø§ÙŠÙ…Ø§Ù‹ Ù…Ù† Ø¬Ø¯ÙˆÙ„ profile Ø§Ù„Ù…ÙˆØ­Ù‘Ø¯ØŒ Ù…Ù‡Ù…Ø§ ÙƒØ§Ù† Ù†ÙˆØ¹ Ø§Ù„ÙŠÙˆØ²Ø±
+      // (Investor Ø£Ùˆ Entrepreneur) - Ù‡Ø§Ø¯ Ø§Ù„Ù…ØµØ¯Ø± Ø§Ù„ÙˆØ­ÙŠØ¯ Ù„Ù„ØµÙˆØ±Ø© Ø¨ÙƒÙ„ Ø§Ù„ØªØ·Ø¨ÙŠÙ‚
+      final profileResponse = await _supabase
+          .from('profile')
+          .select('profile_picture, bio')
+          .eq('userid', userId)
+          .maybeSingle();
+
+      // ðŸ” Debug: Ø´ÙˆÙÙŠ Ø¨Ø§Ù„Ù€ console Ø´Ùˆ Ø§Ù„Ù‚ÙŠÙ…Ø© Ø§Ù„Ø±Ø§Ø¬Ø¹Ø© ÙØ¹Ù„ÙŠØ§Ù‹
+      debugPrint('ðŸ” [profile table] userId=$userId -> response=$profileResponse');
+
+      final String? unifiedPicture = profileResponse?['profile_picture'];
+      final String? unifiedBio = profileResponse?['bio'];
+
+      debugPrint('ðŸ” [profile table] unifiedPicture=$unifiedPicture');
+
+      // Ù†Ø¬Ø±Ø¨ Ø§Ù„Ø§Ø³ØªØ«Ù…Ø§Ø± Ø£ÙˆÙ„Ø§Ù‹
       final investorResponse = await _supabase
           .from('investor_full_profile')
           .select()
@@ -8159,9 +9880,14 @@ class ProfileService {
           .maybeSingle();
 
       if (investorResponse != null) {
-        return ProfileModel.fromView(investorResponse, 'Investor');
+        debugPrint('ðŸ” Found as Investor: $userId');
+        return ProfileModel.fromView(investorResponse, 'Investor').copyWith(
+          profilePicture: unifiedPicture,
+          bio: unifiedBio,
+        );
       }
 
+      // ÙˆØ¥Ù„Ø§ Ù†Ø¬Ø±Ø¨ Ø±Ø§Ø¦Ø¯ Ø§Ù„Ø£Ø¹Ù…Ø§Ù„
       final entrepreneurResponse = await _supabase
           .from('entrepreneur_full_profile')
           .select()
@@ -8169,12 +9895,17 @@ class ProfileService {
           .maybeSingle();
 
       if (entrepreneurResponse != null) {
-        return ProfileModel.fromView(entrepreneurResponse, 'Entrepreneur');
+        debugPrint('ðŸ” Found as Entrepreneur: $userId');
+        return ProfileModel.fromView(entrepreneurResponse, 'Entrepreneur').copyWith(
+          profilePicture: unifiedPicture,
+          bio: unifiedBio,
+        );
       }
 
+      debugPrint('âš ï¸ No profile found at all for userId=$userId');
       return null;
     } catch (e) {
-      debugPrint('Error fetching profile data: $e');
+      debugPrint('âŒ Error fetching profile data: $e');
       return null;
     }
   }
@@ -8212,28 +9943,66 @@ class ProfileService {
     try {
       final response = await _supabase
           .from('ideas')
-          .select('idea_docs')
+          .select('business_plan_url, feasibility_study_url')
           .eq('entrepreneur_id', userId);
 
       int totalDocs = 0;
 
       if (response != null && response.isNotEmpty) {
         for (var row in response) {
-          if (row['idea_docs'] != null && row['idea_docs'] is List) {
-            final List docsList = row['idea_docs'] as List;
-            totalDocs += docsList.length;
+          final businessPlan = row['business_plan_url'];
+          final feasibilityStudy = row['feasibility_study_url'];
+
+          if (businessPlan != null && (businessPlan as String).isNotEmpty) {
+            totalDocs++;
+          }
+          if (feasibilityStudy != null && (feasibilityStudy as String).isNotEmpty) {
+            totalDocs++;
           }
         }
       }
       return totalDocs;
     } catch (e) {
-      debugPrint('Error counting entrepreneur docs from array: $e');
+      debugPrint('Error counting entrepreneur docs: $e');
       return 0;
     }
   }
 
   Future<int> getInvestorInvestmentsCount(String userId) async {
-    return 0;
+    try {
+      final response = await _supabase
+          .from('investments')
+          .select('id')
+          .eq('investor_id', userId);
+      return response.length;
+    } catch (e) {
+      debugPrint('Error counting investments: $e');
+      return 0;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getInvestorInvestments(String userId) async {
+    try {
+      final response = await _supabase
+          .from('investments')
+          .select('id, idea_id, investment_date, ideas(title, description, status, ai_rating)')
+          .eq('investor_id', userId);
+
+      return response.map<Map<String, dynamic>>((row) {
+        final idea = row['ideas'] as Map<String, dynamic>?;
+        return {
+          'investment_id': row['id'],
+          'idea_id': row['idea_id'],
+          'investment_date': row['investment_date'],
+          'title': idea?['title'] ?? 'Untitled Idea',
+          'description': idea?['description'] ?? '',
+          'status': idea?['status'] ?? 'pending',
+        };
+      }).toList();
+    } catch (e) {
+      debugPrint('Error fetching investor investments: $e');
+      return [];
+    }
   }
 
   Future<int> getInvestorChatsCount(String userId) async {
@@ -8249,7 +10018,6 @@ class ProfileService {
     }
   }
 }
-
 
 ``n
 ### File: D:\FlutterProjects\Investra_App\lib\features\profile\presentation\pages\profile_screen.dart
@@ -8322,9 +10090,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   child: CircleAvatar(
                     radius: 50,
                     backgroundColor: AppColors.secondary1Color,
-                    backgroundImage: profile.profilePicture != null
+                    backgroundImage: profile.profilePicture != null && profile.profilePicture!.isNotEmpty
                         ? NetworkImage(profile.profilePicture!)
-                        : const AssetImage('assets/images/profile_placeholder.png') as ImageProvider,
+                        : null,
+                    child: profile.profilePicture == null || profile.profilePicture!.isEmpty
+                        ? const Icon(Icons.person, size: 50, color: AppColors.primaryColor)
+                        : null,
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -8359,7 +10130,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 }
-
 
 ``n
 ### File: D:\FlutterProjects\Investra_App\lib\features\profile\presentation\widgets\entrepreneur_view_body.dart
@@ -8458,6 +10228,8 @@ class _EntrepreneurViewBodyState extends State<EntrepreneurViewBody> with Single
                     itemCount: ideas.length,
                     itemBuilder: (context, index) {
                       final idea = ideas[index];
+                      final bool isFunded = idea['status'] == 'funded';
+
                       return Container(
                         margin: const EdgeInsets.only(bottom: 8),
                         decoration: BoxDecoration(
@@ -8469,6 +10241,24 @@ class _EntrepreneurViewBodyState extends State<EntrepreneurViewBody> with Single
                           leading: const Icon(Icons.lightbulb_outline, color: AppColors.primaryColor),
                           title: Text(idea['title'] ?? 'No Title', style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.blackColor)),
                           subtitle: Text(idea['description'] ?? 'No Description', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: AppColors.grayColor)),
+                          // âœ… Ø¨Ø§Ø¯Ø¬ ÙŠÙˆØ¶Ø­ Ø­Ø§Ù„Ø© Ø§Ù„ÙÙƒØ±Ø© (Pending / Funded) Ø¨Ù†Ø§Ø¡Ù‹ Ø¹Ù„Ù‰ ideas.status
+                          trailing: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: isFunded
+                                  ? AppColors.green1Color.withOpacity(0.15)
+                                  : AppColors.secondary1Color,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              (idea['status'] ?? 'pending').toString().toUpperCase(),
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: isFunded ? AppColors.green1Color : AppColors.grayColor,
+                              ),
+                            ),
+                          ),
                         ),
                       );
                     },
@@ -8501,7 +10291,6 @@ class _EntrepreneurViewBodyState extends State<EntrepreneurViewBody> with Single
     );
   }
 }
-
 
 ``n
 ### File: D:\FlutterProjects\Investra_App\lib\features\profile\presentation\widgets\investor_view_body.dart
@@ -8578,26 +10367,102 @@ class _InvestorViewBodyState extends State<InvestorViewBody> with SingleTickerPr
           ],
         ),
 
-        // 3. Ø§Ù„Ù€ TabBarView Ù„Ø¹Ø±Ø¶ Ø§Ù„Ù…Ø­ØªÙˆÙ‰ Ø£Ùˆ Ø§Ù„Ù€ Empty State Ø¯Ø§Ø®Ù„ ÙƒÙ„ Tab
         Container(
           height: 250, // Ù…Ø³Ø§Ø­Ø© Ù…Ø±ÙŠØ­Ø© Ù„Ù„Ù€ Empty State ÙˆØ§Ù„Ù€ Scrolling Ù„Ø§Ø­Ù‚Ø§Ù‹
           padding: const EdgeInsets.all(16),
           child: TabBarView(
             controller: _tabController,
             children: [
-              // Ø§Ù„Ù€ Tab Ø§Ù„Ø£ÙˆÙ„: Investments (Ø¨ÙŠØ¹Ø±Ø¶ Ø­Ø§Ù„ÙŠØ§Ù‹ Ø§Ù„Ù€ Empty State Ø¨Ø´ÙƒÙ„ Ù…Ù†Ø¸Ù…)
-              const Center(
-                child: Text(
-                  'No active investments to show.',
-                  style: TextStyle(
-                    color: AppColors.grayColor,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
+
+              FutureBuilder<List<Map<String, dynamic>>>(
+                future: _logic.getInvestorInvestments(widget.profile.userId),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(
+                      child: CircularProgressIndicator(color: AppColors.primaryColor),
+                    );
+                  }
+
+                  final investments = snapshot.data ?? [];
+                  if (investments.isEmpty) {
+                    return const Center(
+                      child: Text(
+                        'No active investments to show.',
+                        style: TextStyle(
+                          color: AppColors.grayColor,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    );
+                  }
+
+                  return ListView.builder(
+                    itemCount: investments.length,
+                    itemBuilder: (context, index) {
+                      final inv = investments[index];
+                      final bool isFunded = inv['status'] == 'funded';
+
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.bgColor,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppColors.bgGray),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.trending_up, color: AppColors.primaryColor),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    inv['title'] ?? 'Untitled',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: AppColors.blackColor,
+                                    ),
+                                  ),
+                                  Text(
+                                    inv['description'] ?? '',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: AppColors.grayColor,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: isFunded
+                                    ? AppColors.green1Color.withOpacity(0.15)
+                                    : AppColors.secondary1Color,
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(
+                                isFunded ? 'Funded' : 'Pending',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: isFunded ? AppColors.green1Color : AppColors.grayColor,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  );
+                },
               ),
 
-              // Ø§Ù„Ù€ Tab Ø§Ù„Ø«Ø§Ù†ÙŠ: Investor Details
               const Center(
                 child: Text(
                   'No details provided yet.',
@@ -8641,7 +10506,6 @@ class _InvestorViewBodyState extends State<InvestorViewBody> with SingleTickerPr
   }
 }
 
-
 ``n
 ### File: D:\FlutterProjects\Investra_App\lib\features\profile\presentation\widgets\profile_header.dart
 `dart
@@ -8658,7 +10522,7 @@ class ProfileHeader extends StatelessWidget {
     return Column(
       children: [
         const SizedBox(height: 25),
-        // Ø¯Ø§Ø¦Ø±Ø© Ø§Ù„ØµÙˆØ±Ø© Ø§Ù„Ø´Ø®ØµÙŠØ© Ù…Ø¹ Ø¥Ø·Ø§Ø± Ø®ÙÙŠÙ Ø§Ø­ØªØ±Ø§ÙÙŠ
+
         Container(
           decoration: BoxDecoration(
             shape: BoxShape.circle,
@@ -8669,18 +10533,18 @@ class ProfileHeader extends StatelessWidget {
             backgroundColor: AppColors.secondary1Color,
             backgroundImage: profile.profilePicture != null && profile.profilePicture!.isNotEmpty
                 ? NetworkImage(profile.profilePicture!)
-                : const AssetImage('assets/images/default_pfp.png') as ImageProvider,
+                : const AssetImage('') as ImageProvider,
           ),
         ),
         const SizedBox(height: 12),
-        // Ø§Ù„Ø§Ø³Ù… Ø¨Ø®Ø· Ø¹Ø±ÙŠØ¶ ÙˆÙˆØ§Ø¶Ø­
+
         Text(
           profile.fullName,
           style: const TextStyle(
             fontSize: 24,
             fontWeight: FontWeight.bold,
             color: AppColors.blackColor,
-            fontFamily: 'CabinetGrotesk', // Ø£Ùˆ Ø®Ø· Ù…Ø´Ø±ÙˆØ¹Ùƒ Ø§Ù„Ø£Ø³Ø§Ø³ÙŠ
+            fontFamily: 'CabinetGrotesk',
           ),
         ),
         const SizedBox(height: 4),
@@ -8695,7 +10559,6 @@ class ProfileHeader extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        // Ø§Ù„Ø¨Ø§ÙŠÙˆ Ø§Ù„Ø­Ù‚ÙŠÙ‚ÙŠ Ø¨Ø¯Ø§Ø®Ù„ Ù…Ø³Ø§ÙØ§Øª Ù…Ø±ÙŠØ­Ø© Ù„Ù„Ø¹ÙŠÙ†
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 32.0),
           child: Text(
@@ -8993,110 +10856,149 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
 `dart
 import 'package:flutter/material.dart';
 import 'package:investra/core/styles/colors.dart';
+import '../widgets/build_icon_container.dart';
 
-class SecuritySettingsScreen extends StatefulWidget {
+class SecuritySettingsScreen extends StatelessWidget {
   const SecuritySettingsScreen({super.key});
-
-  @override
-  State<SecuritySettingsScreen> createState() => _SecuritySettingsScreenState();
-}
-
-class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
-  bool is2FAEnabled = true;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.secondary2Color,
+      backgroundColor: AppColors.bgColor,
       appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios, color: AppColors.primaryColor),
+          onPressed: () => Navigator.pop(context),
+        ),
         title: const Text(
-          "Security Settings",
+          'Help & Support',
           style: TextStyle(
             color: AppColors.primaryColor,
             fontWeight: FontWeight.bold,
           ),
         ),
-        backgroundColor: Colors.white,
-        elevation: 0,
-        iconTheme: const IconThemeData(color: AppColors.primaryColor),
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 10),
+            const Text(
+              "How can we help?",
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: AppColors.blackColor,
+              ),
+            ),
+            const SizedBox(height: 30),
+
+            const Text(
+              "Top Questions",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 10),
+            _buildFAQExpandable(
+              "How do I publish my idea?",
+              "Create an idea profile and upload the required business documents.",
+            ),
+            _buildFAQExpandable(
+              "Can investors view my documents?",
+              "Only after approval and NDA completion, if required.",
+            ),
+            _buildFAQExpandable(
+              "How does AI help investors?",
+              "AI provides idea assessments and insights to support investment decisions.",
+            ),
+            _buildFAQExpandable(
+              "Is my information secure?",
+              "Yes, Investra uses secure authentication, protected storage, and controlled document access.",
+            ),
+            const SizedBox(height: 35),
+
+            const Text(
+              "Contact Us Directly",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 15),
+            _buildContactOption(
+              icon: Icons.mail_outline_rounded,
+              title: "Email Us",
+              trailingText: "investraSupport@gmail.com",
+            ),
+            _buildContactOption(
+              icon: Icons.phone_outlined,
+              title: "Phone",
+              trailingText: "1779",
+            ),
+
+            const SizedBox(height: 30),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFAQExpandable(String question, String answer) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.primaryColor.withOpacity(0.1)),
+      ),
+      child: ExpansionTile(
+        shape: const RoundedRectangleBorder(side: BorderSide.none),
+        title: Text(
+          question,
+          style: const TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            color: AppColors.primaryColor,
+          ),
+        ),
+        iconColor: AppColors.primaryColor,
         children: [
-          _buildSecurityOption(
-            icon: Icons.phonelink_lock_rounded,
-            title: "Two-Factor Authentication",
-            subtitle: "Use an authenticator app for extra security",
-            trailing: Switch.adaptive(
-              value: is2FAEnabled,
-              activeTrackColor: AppColors.green1Color,
-              onChanged: (val) => setState(() => is2FAEnabled = val),
+          Padding(
+            padding: const EdgeInsets.only(left: 16, right: 16, bottom: 16),
+            child: Text(
+              answer,
+              style: const TextStyle(color: AppColors.darkGray, height: 1.4),
             ),
-          ),
-          const SizedBox(height: 16),
-          _buildSecurityOption(
-            icon: Icons.fingerprint_rounded,
-            title: "Biometric Login",
-            subtitle: "Use FaceID or Fingerprint to login",
-            trailing: const Icon(
-              Icons.arrow_forward_ios,
-              size: 16,
-              color: AppColors.darkGray,
-            ),
-            onTap: () {},
-          ),
-          const SizedBox(height: 16),
-          _buildSecurityOption(
-            icon: Icons.devices_rounded,
-            title: "Manage Devices",
-            subtitle: "See where you are currently logged in",
-            trailing: const Icon(
-              Icons.arrow_forward_ios,
-              size: 16,
-              color: AppColors.darkGray,
-            ),
-            onTap: () {},
           ),
         ],
       ),
     );
   }
 
-  Widget _buildSecurityOption({
+  Widget _buildContactOption({
     required IconData icon,
     required String title,
-    required String subtitle,
-    required Widget trailing,
-    VoidCallback? onTap,
+    required String trailingText,
   }) {
     return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10),
-        ],
+        borderRadius: BorderRadius.circular(12),
       ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-        leading: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: AppColors.secondary2Color,
-            shape: BoxShape.circle,
+      child: Row(
+        children: [
+          buildIconContainer(
+            icon: Icon(icon, color: AppColors.primaryColor, size: 22),
           ),
-          child: Icon(icon, color: AppColors.primaryColor),
-        ),
-        title: Text(
-          title,
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-        ),
-        subtitle: Text(
-          subtitle,
-          style: const TextStyle(fontSize: 12, color: AppColors.darkGray),
-        ),
-        trailing: trailing,
-        onTap: onTap,
+          const SizedBox(width: 15),
+          Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+          const Spacer(),
+          Text(
+            trailingText,
+            style: const TextStyle(color: AppColors.grayColor, fontSize: 13),
+          ),
+        ],
       ),
     );
   }
@@ -9115,6 +11017,7 @@ import 'package:investra/core/styles/colors.dart';
 import 'package:investra/core/constants/app_images.dart';
 import 'package:investra/features/notifications/presentation/pages/notifications_screen.dart';
 import 'package:investra/features/auth/presentation/pages/login_screen.dart';
+import 'security_settings_screen.dart';
 
 
 import 'change_password_screen.dart';
@@ -9277,9 +11180,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
           automaticallyImplyLeading: false,
           backgroundColor: AppColors.bgColor,
           elevation: 0,
-          title: const Text(' INVESTRA', style: TextStyle(color: AppColors.primaryColor, fontSize: 24, fontWeight: FontWeight.bold)),
+          centerTitle: false,
+          title: const Text('Investra', style: TextStyle(color: AppColors.primaryColor, fontSize: 24, fontWeight: FontWeight.bold)),
           actions: [
             _buildNotificationIcon(),
+            const SizedBox(width: 4),
+            IconButton(
+              constraints: const BoxConstraints(),
+              padding: EdgeInsets.zero,
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const SecuritySettingsScreen()),
+                );
+              },
+              icon: const Icon(Icons.help_outline_rounded, color: AppColors.primaryColor, size: 26),
+            ),
+            const SizedBox(width: 12),
+            _buildSmallProfileAvatar(),
             const SizedBox(width: 16),
           ],
         ),
@@ -9323,17 +11241,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
 
                 const SizedBox(height: 24),
-
-
-                const BuildSectionTitle(title: 'PREFERENCES'),
-                CustomSettingsToggle(
-                  icon: const Icon(Icons.notifications_active_outlined, color: AppColors.primaryColor),
-                  title: 'Push Notifications',
-                  subtitle: 'Alerts for your account activity',
-                  value: true,
-                  onChanged: (val) {},
-                ),
-
                 const SizedBox(height: 40),
 
 
@@ -9388,8 +11295,49 @@ class _SettingsScreenState extends State<SettingsScreen> {
       label: const Text("Sign Out", style: TextStyle(color: AppColors.errorColor, fontWeight: FontWeight.bold)),
     );
   }
-}
 
+  Future<void> _viewProfileImage() {
+    return showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(20),
+        child: Stack(
+          alignment: Alignment.topRight,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: _profileImageUrl != null
+                  ? Image.network(_profileImageUrl!, fit: BoxFit.contain)
+                  : Image.asset('assets/images/profile.png', fit: BoxFit.contain),
+            ),
+            IconButton(
+              icon: const Icon(Icons.close, color: Colors.white, size: 30),
+              onPressed: () => Navigator.pop(context),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSmallProfileAvatar() {
+    return GestureDetector(
+      onTap: _viewProfileImage,
+      child: Container(
+        width: 35,
+        height: 35,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: AppColors.primaryColor.withOpacity(0.1), width: 1),
+          image: _profileImageUrl != null
+              ? DecorationImage(image: NetworkImage(_profileImageUrl!), fit: BoxFit.cover)
+              : const DecorationImage(image: AssetImage('assets/images/profile.png'), fit: BoxFit.cover),
+        ),
+      ),
+    );
+  }
+}
 
 ``n
 ### File: D:\FlutterProjects\Investra_App\lib\features\settings\presentation\widgets\build_icon_container.dart
@@ -9829,8 +11777,9 @@ import 'package:investra/core/styles/colors.dart';
 import 'package:investra/features/auth/data/services/auth_service.dart';
 import 'package:investra/features/auth/presentation/pages/login_screen.dart';
 import 'package:investra/features/main_app/presentation/pages/main_app_entrepreneur_screen.dart';
-import 'package:investra/features/auth/presentation/pages/register_screen.dart';
 import 'package:investra/features/main_app/presentation/pages/main_app_investor_screen.dart';
+import 'package:investra/features/onboarding/presentation/pages/onboarding_screen.dart';
+
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
@@ -9840,10 +11789,8 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMixin {
   late AnimationController _mainController;
-  late AnimationController _pulseController;
   late Animation<double> _fadeAnimation;
   late Animation<double> _scaleAnimation;
-  late Animation<double> _pulseAnimation;
 
   @override
   void initState() {
@@ -9851,45 +11798,34 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
 
     _mainController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 2000),
+      duration: const Duration(milliseconds: 1500),
     );
+    
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _mainController, curve: Curves.easeIn),
     );
-    _scaleAnimation = Tween<double>(begin: 0.6, end: 1.0).animate(
-      CurvedAnimation(parent: _mainController, curve: Curves.elasticOut),
-    );
-
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 3),
-    )..repeat(reverse: true);
-    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.05).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    
+    _scaleAnimation = Tween<double>(begin: 0.9, end: 1.0).animate(
+      CurvedAnimation(parent: _mainController, curve: Curves.easeOutBack),
     );
 
     _mainController.forward();
-
     _handleNavigation();
   }
 
   Future<void> _handleNavigation() async {
-    await Future.delayed(const Duration(seconds: 4));
+    await Future.delayed(const Duration(seconds: 3));
     if (!mounted) return;
 
     try {
-
       final session = Supabase.instance.client.auth.currentSession;
-
       final prefs = await SharedPreferences.getInstance();
       final bool isNotNewDevice = prefs.getBool('is_not_new_device') ?? false;
 
       if (session != null) {
         final String role = await AuthService().updateUserSessionAndGetRole(session.user.id);
-
         if (!mounted) return;
-
-        await prefs.setBool('is_not_not_new_device', true);
+        await prefs.setBool('is_not_new_device', true);
 
         if (role == 'Entrepreneur') {
           _navigateTo(const MainAppEntrepreneurScreen());
@@ -9898,17 +11834,12 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
         } else {
           _navigateTo(const LoginScreen());
         }
-
       } else {
-
         if (isNotNewDevice) {
-
-
           _navigateTo(const LoginScreen());
         } else {
           await prefs.setBool('is_not_new_device', true);
-
-          _navigateTo(const RegistrationScreen());
+          _navigateTo(const OnboardingScreen());
         }
       }
     } catch (e) {
@@ -9927,7 +11858,7 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           return FadeTransition(opacity: animation, child: child);
         },
-        transitionDuration: const Duration(milliseconds: 1200),
+        transitionDuration: const Duration(milliseconds: 800),
       ),
     );
   }
@@ -9935,66 +11866,30 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
   @override
   void dispose() {
     _mainController.dispose();
-    _pulseController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.bg,
+      backgroundColor: Colors.white,
       body: Container(
         width: double.infinity,
         height: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: RadialGradient(
-            center: Alignment.center,
-            radius: 1.5,
-            colors: [
-              Color(0xFFE0F2FE),
-              Colors.white,
-            ],
-          ),
-        ),
+        color: Colors.white,
         child: Stack(
           alignment: Alignment.center,
           children: [
-            // 1. Floating Particles for depth
-            ...List.generate(5, (index) => _PositionedParticle(index: index)),
-
-            // 2. Centered Logo
+            // Centered Big Logo
             Center(
               child: FadeTransition(
                 opacity: _fadeAnimation,
                 child: ScaleTransition(
-                  scale: _pulseAnimation,
-                  child: ScaleTransition(
-                    scale: _scaleAnimation,
-                    child: Image.asset(
-                      'assets/images/App_logo.png',
-                      width: MediaQuery.of(context).size.width * 0.9,
-                      fit: BoxFit.contain,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-
-            // 3. Elegant Bottom Line
-            Positioned(
-              bottom: 80,
-              left: 0,
-              right: 0,
-              child: FadeTransition(
-                opacity: _fadeAnimation,
-                child: Center(
-                  child: Container(
-                    width: 50,
-                    height: 2,
-                    decoration: BoxDecoration(
-                      color: AppColors.primaryColor.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(1),
-                    ),
+                  scale: _scaleAnimation,
+                  child: Image.asset(
+                    'assets/images/big_logo.png',
+                    width: MediaQuery.of(context).size.width * 0.95,
+                    fit: BoxFit.contain,
                   ),
                 ),
               ),
@@ -10006,45 +11901,18 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
   }
 }
 
-class _PositionedParticle extends StatelessWidget {
-  final int index;
-  const _PositionedParticle({required this.index});
-
-  @override
-  Widget build(BuildContext context) {
-    final List<Offset> offsets = [
-      const Offset(-100, -150),
-      const Offset(120, -100),
-      const Offset(-80, 180),
-      const Offset(100, 150),
-      const Offset(0, -200),
-    ];
-
-    return Center(
-      child: Transform.translate(
-        offset: offsets[index % offsets.length],
-        child: Container(
-          width: 8 + (index * 2),
-          height: 8 + (index * 2),
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: AppColors.primaryColor.withValues(alpha: 0.05),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 
 ``n
 ### File: D:\FlutterProjects\Investra_App\lib\features\submit_idea\data\services\submit_idea_service.dart
 `dart
 import 'dart:io';
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class SubmitIdeaService {
   final SupabaseClient _supabase = Supabase.instance.client;
+
+  static const String _aiBaseUrl = 'https://investraapp-production.up.railway.app';
 
   Future<void> submitIdea({
     required String title,
@@ -10057,43 +11925,86 @@ class SubmitIdeaService {
       final userId = _supabase.auth.currentUser?.id;
       if (userId == null) throw Exception('User not logged in');
 
-      List<String> uploadedUrls = [];
+      String? bpUrl;
+      String? fsUrl;
 
-      // Upload Business Plan
+      // 1. Ø±ÙØ¹ Ø®Ø·Ø© Ø§Ù„Ø¹Ù…Ù„ (Business Plan)
       if (businessPlanFile != null) {
         String fileName = 'bp_${DateTime.now().millisecondsSinceEpoch}.pdf';
         await _supabase.storage
             .from('ideas_docs')
             .upload('public/$fileName', businessPlanFile);
-        uploadedUrls.add(
-            _supabase.storage.from('ideas_docs').getPublicUrl('public/$fileName'));
+        bpUrl = _supabase.storage
+            .from('ideas_docs')
+            .getPublicUrl('public/$fileName');
       }
 
-      // Upload Feasibility Study
+      // 2. Ø±ÙØ¹ Ø¯Ø±Ø§Ø³Ø© Ø§Ù„Ø¬Ø¯ÙˆÙ‰ (Feasibility Study)
       if (feasibilityFile != null) {
         String fileName = 'fs_${DateTime.now().millisecondsSinceEpoch}.pdf';
         await _supabase.storage
             .from('ideas_docs')
             .upload('public/$fileName', feasibilityFile);
-        uploadedUrls.add(
-            _supabase.storage.from('ideas_docs').getPublicUrl('public/$fileName'));
+        fsUrl = _supabase.storage
+            .from('ideas_docs')
+            .getPublicUrl('public/$fileName');
       }
 
-      // Insert data into 'ideas' table
-      await _supabase.from('ideas').insert({
+      // 3. Ø¥Ø¯Ø±Ø§Ø¬ Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª ÙÙŠ Ø¬Ø¯ÙˆÙ„ 'ideas' ÙˆØ§Ø³ØªØ±Ø¬Ø§Ø¹ Ø§Ù„Ù€ id Ø§Ù„Ø¬Ø¯ÙŠØ¯
+      final inserted = await _supabase
+          .from('ideas')
+          .insert({
         'title': title,
         'description': description,
         'category': category,
         'entrepreneur_id': userId,
-        'idea_docs': uploadedUrls,
+        'business_plan_url': bpUrl,
+        'feasibility_study_url': fsUrl,
         'status': 'pending',
-      });
+      })
+          .select('id')
+          .single();
+
+      final ideaId = inserted['id'].toString();
+
+      // 4. Ø¥Ø·Ù„Ø§Ù‚ Ø·Ù„Ø¨ Ø§Ù„ØªÙ‚ÙŠÙŠÙ… Ø¨Ø§Ù„Ù€ AI Ù…Ù† ØºÙŠØ± Ù…Ø§ Ù†ÙˆÙ‚Ù Ù†Ø¬Ø§Ø­ Ø§Ù„Ù€ submit Ø¹Ù„ÙŠÙ‡
+      final fileToEvaluate = businessPlanFile ?? feasibilityFile;
+      if (fileToEvaluate != null) {
+        _triggerAiEvaluation(
+          ideaId: ideaId,
+          userId: userId,
+          file: fileToEvaluate,
+        );
+      }
     } catch (e) {
       rethrow;
     }
   }
-}
 
+
+  Future<void> _triggerAiEvaluation({
+    required String ideaId,
+    required String userId,
+    required File file,
+  }) async {
+    try {
+      final uri = Uri.parse('$_aiBaseUrl/evaluate');
+      final request = http.MultipartRequest('POST', uri)
+        ..fields['idea_id'] = ideaId
+        ..fields['user_id'] = userId
+        ..files.add(await http.MultipartFile.fromPath('file', file.path));
+
+      final streamedResponse = await request.send();
+      if (streamedResponse.statusCode != 200) {
+        // ignore: avoid_print
+        print('AI evaluation failed with status ${streamedResponse.statusCode}');
+      }
+    } catch (e) {
+      // ignore: avoid_print
+      print('AI evaluation request error: $e');
+    }
+  }
+}
 
 ``n
 ### File: D:\FlutterProjects\Investra_App\lib\features\submit_idea\presentation\pages\submit_idea_screen.dart
@@ -10129,8 +12040,6 @@ class _SubmitIdeaScreenState extends State<SubmitIdeaScreen> {
   bool _isUploading = false;
 
   String? _category;
-  bool _businessPlan = false;
-  bool _feasibilityStudy = false;
 
   int _completedSteps = 0;
   double _progress = 0;
@@ -10168,7 +12077,8 @@ class _SubmitIdeaScreenState extends State<SubmitIdeaScreen> {
 
   bool get _step2Complete => _pitchController.text.trim().isNotEmpty;
 
-  bool get _step3Complete => _businessPlan || _feasibilityStudy;
+  bool get _step3Complete =>
+      _businessPlanFile != null || _feasibilityFile != null;
 
   /// Updates step counter, progress bar, submit enabled state, and completed count.
   void updateStepProgress() {
@@ -10187,12 +12097,6 @@ class _SubmitIdeaScreenState extends State<SubmitIdeaScreen> {
     });
   }
 
-
-
-
-
-
-
   // 1. ÙˆØ¸ÙŠÙØ© Ù„Ø§Ø®ØªÙŠØ§Ø± Ø§Ù„Ù…Ù„Ù Ù…Ù† Ø§Ù„Ù…ÙˆØ¨Ø§ÙŠÙ„ ÙˆØªØ®Ø²ÙŠÙ†Ù‡
   Future<void> _pickDocument(bool isBusinessPlan) async {
     FilePickerResult? result = await FilePicker.platform.pickFiles(
@@ -10204,17 +12108,15 @@ class _SubmitIdeaScreenState extends State<SubmitIdeaScreen> {
       setState(() {
         if (isBusinessPlan) {
           _businessPlanFile = File(result.files.single.path!);
-          _businessPlan = true;
         } else {
           _feasibilityFile = File(result.files.single.path!);
-          _feasibilityStudy = true;
         }
       });
       updateStepProgress();
     }
   }
 
-  // 2. Ø§Ù„ÙˆØ¸ÙŠÙØ© Ø§Ù„Ù†Ù‡Ø§Ø¦ÙŠØ© Ù„Ø±ÙØ¹ Ø§Ù„Ù…Ù„ÙØ§Øª Ù„Ù„Ù€ Storage ÙˆØ­ÙØ¸ Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª ÙÙŠ Ø§Ù„Ø¬Ø¯ÙˆÙ„
+
   Future<void> _submitAllData() async {
     setState(() => _isUploading = true);
 
@@ -10229,7 +12131,7 @@ class _SubmitIdeaScreenState extends State<SubmitIdeaScreen> {
 
       if (mounted) {
         CustomSnackBar.showSuccess(context, 'Your idea has been submitted successfully!');
-        Navigator.pop(context); // Back to home after success
+        Navigator.pop(context);
       }
     } catch (e) {
       if (mounted) {
@@ -10239,11 +12141,6 @@ class _SubmitIdeaScreenState extends State<SubmitIdeaScreen> {
       if (mounted) setState(() => _isUploading = false);
     }
   }
-
-
-
-
-
 
   String _stepSubtitle() {
     if (!_step1Complete) return 'Project Fundamentals';
@@ -10354,10 +12251,10 @@ class _SubmitIdeaScreenState extends State<SubmitIdeaScreen> {
                   items: _categories
                       .map(
                         (c) => DropdownMenuItem<String>(
-                          value: c,
-                          child: Text(c),
-                        ),
-                      )
+                      value: c,
+                      child: Text(c),
+                    ),
+                  )
                       .toList(),
                   onChanged: (value) {
                     setState(() => _category = value);
@@ -10392,36 +12289,27 @@ class _SubmitIdeaScreenState extends State<SubmitIdeaScreen> {
             ),
             const SizedBox(height: 12),
 
-
             _ChecklistTile(
               label: 'Business Plan',
-              isChecked: _businessPlan,
+              isChecked: _businessPlanFile != null,
               isFileUploaded: _businessPlanFile != null,
-              onCheckboxChanged: (v) {
-                setState(() => _businessPlan = v ?? false);
-                updateStepProgress();
-              },
+              onCheckboxChanged: (v) => _pickDocument(true),
               onAdd: () => _pickDocument(true),
             ),
             const SizedBox(height: 8),
             _ChecklistTile(
               label: 'Feasibility Study',
-              isChecked: _feasibilityStudy,
+              isChecked: _feasibilityFile != null,
               isFileUploaded: _feasibilityFile != null,
-              onCheckboxChanged: (v) {
-                setState(() => _feasibilityStudy = v ?? false);
-                updateStepProgress();
-              },
+              onCheckboxChanged: (v) => _pickDocument(false),
               onAdd: () => _pickDocument(false),
             ),
             const SizedBox(height: 28),
 
             SubmitIdeaSubmitButton(
-
               enabled: _formComplete && !_isUploading,
               onPressed: _submitAllData,
             ),
-
 
             const SizedBox(height: 12),
             Center(
@@ -10594,7 +12482,6 @@ class _ChecklistTile extends StatelessWidget {
     );
   }
 }
-
 
 ``n
 ### File: D:\FlutterProjects\Investra_App\lib\features\submit_idea\presentation\widgets\submit_button.dart
