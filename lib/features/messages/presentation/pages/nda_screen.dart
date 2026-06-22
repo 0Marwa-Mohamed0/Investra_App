@@ -364,7 +364,6 @@ class _NdaScreenState extends State<NdaScreen> {
         'type':     'nda_signed',
         'is_read':  false,
         'idea_id':  _ndaData!.ideaId,
-        'status':   'pending',
       });
 
       if (mounted) {

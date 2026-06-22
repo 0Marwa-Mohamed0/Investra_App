@@ -1,7 +1,45 @@
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:investra/core/constants/app_images.dart';
 import 'package:investra/core/styles/colors.dart';
 import 'package:investra/core/widgets/custom_svg_picture.dart';
+
+// ── ملف/صورة جاهزة للإرسال (قبل الرفع لـ Supabase) ─────────────────────────
+enum PendingAttachmentType { image, document }
+
+class PendingAttachment {
+  const PendingAttachment._({
+    required this.type,
+    this.file,
+    this.bytes,
+    this.fileName,
+  });
+
+  final PendingAttachmentType type;
+  final File? file;
+  final Uint8List? bytes;
+  final String? fileName;
+
+  factory PendingAttachment.image({required File file}) {
+    return PendingAttachment._(
+      type: PendingAttachmentType.image,
+      file: file,
+    );
+  }
+
+  factory PendingAttachment.document({
+    required Uint8List bytes,
+    required String fileName,
+  }) {
+    return PendingAttachment._(
+      type: PendingAttachmentType.document,
+      bytes: bytes,
+      fileName: fileName,
+    );
+  }
+}
 
 class MessageInputBar extends StatelessWidget {
   const MessageInputBar({

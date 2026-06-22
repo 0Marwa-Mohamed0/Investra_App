@@ -39,7 +39,6 @@ class _ChatScreenState extends State<ChatScreen> {
   ChatContact get _user => widget.user;
   String get _myId => Supabase.instance.client.auth.currentUser!.id;
 
-  // ─────────────────────────────────────────────────────────────────────────
   @override
   void initState() {
     super.initState();
@@ -77,12 +76,12 @@ class _ChatScreenState extends State<ChatScreen> {
         if (!isFromUser && !_knownIds.contains(msgId) && !_isFirstLoad) {
           hasNewIncoming = true;
         }
-
         _knownIds.add(msgId);
 
-        const dateLabel = 'TODAY';
+        // ── date separator ────────────────────────────────────────────────
+        final dateLabel = _dateLabel(dt);
         if (lastDate != dateLabel) {
-          items.add(const ChatDateSeparatorItem(dateLabel));
+          items.add(ChatDateSeparatorItem(dateLabel));
           lastDate = dateLabel;
         }
 
@@ -119,7 +118,19 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  // ── scroll helpers ────────────────────────────────────────────────────────
+  // ── date label ────────────────────────────────────────────────────────────
+  String _dateLabel(DateTime? dt) {
+    if (dt == null) return 'TODAY';
+    final now = DateTime.now();
+    final diff = DateTime(now.year, now.month, now.day)
+        .difference(DateTime(dt.year, dt.month, dt.day))
+        .inDays;
+    if (diff == 0) return 'TODAY';
+    if (diff == 1) return 'YESTERDAY';
+    return '${dt.day}/${dt.month}/${dt.year}';
+  }
+
+  // ── scroll ────────────────────────────────────────────────────────────────
   void _handleScroll() {
     if (!_scrollController.hasClients) return;
     final p = _scrollController.position;
@@ -148,7 +159,7 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() => _newMessageCount = 0);
   }
 
-  // ── إرسال رسالة نصية ─────────────────────────────────────────────────────
+  // ── إرسال رسالة ──────────────────────────────────────────────────────────
   Future<void> _send() async {
     final t = _messageController.text.trim();
     if (t.isEmpty) return;
@@ -174,7 +185,7 @@ class _ChatScreenState extends State<ChatScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('فشل الإرسال: $e')),
+          SnackBar(content: Text('Failed to send: $e')),
         );
         setState(() {
           _items.removeWhere(
@@ -184,12 +195,34 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  // ── ✅ فتح NDA screen للإنفستور ──────────────────────────────────────────
+  // ── استقبال attachment (صورة/ملف) من البوتوم شيت وبعته ──────────────────
+  Future<void> _onAttachmentPicked(PendingAttachment attachment) async {
+    try {
+      if (attachment.type == PendingAttachmentType.image) {
+        await _service.sendImage(
+          chatId: _user.id,
+          imageFile: attachment.file!,
+        );
+      } else {
+        await _service.sendDocument(
+          chatId: _user.id,
+          bytes: attachment.bytes!,
+          fileName: attachment.fileName!,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to send attachment: $e')),
+        );
+      }
+    }
+  }
+
+  // ── فتح NDA للمستثمر ──────────────────────────────────────────────────────
   void _openNdaForSigning() {
     Navigator.of(context).push<bool>(
-      MaterialPageRoute(
-        builder: (_) => NdaScreen(chatId: _user.id),
-      ),
+      MaterialPageRoute(builder: (_) => NdaScreen(chatId: _user.id)),
     );
   }
 
@@ -307,9 +340,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 ListView.builder(
                   controller: _scrollController,
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
+                      horizontal: 12, vertical: 8),
                   itemCount: _items.length,
                   itemBuilder: (context, index) {
                     final item = _items[index];
@@ -346,9 +377,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           borderRadius: BorderRadius.circular(20),
                           child: Padding(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 8,
-                            ),
+                                horizontal: 16, vertical: 8),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
@@ -384,6 +413,7 @@ class _ChatScreenState extends State<ChatScreen> {
             onAttachment: () => ChatAttachmentBottomSheet.show(
               context,
               chatId: _user.id,
+              onAttachmentPicked: _onAttachmentPicked,
             ),
           ),
         ],

@@ -66,9 +66,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   child: CircleAvatar(
                     radius: 50,
                     backgroundColor: AppColors.secondary1Color,
-                    backgroundImage: profile.profilePicture != null
+                    backgroundImage: profile.profilePicture != null && profile.profilePicture!.isNotEmpty
                         ? NetworkImage(profile.profilePicture!)
-                        : const AssetImage('assets/images/profile_placeholder.png') as ImageProvider,
+                        : null,
+                    child: profile.profilePicture == null || profile.profilePicture!.isEmpty
+                        ? const Icon(Icons.person, size: 50, color: AppColors.primaryColor)
+                        : null,
                   ),
                 ),
                 const SizedBox(height: 12),

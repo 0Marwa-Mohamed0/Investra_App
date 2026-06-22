@@ -81,7 +81,7 @@ class HelpSupportScreen extends StatelessWidget {
             _buildContactOption(
               icon: Icons.phone_outlined,
               title: "Phone",
-              trailingText: "+20 123 456 789",
+              trailingText: "+201007410619",
             ),
 
             const SizedBox(height: 30),

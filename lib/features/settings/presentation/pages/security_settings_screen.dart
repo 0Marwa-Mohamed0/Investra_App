@@ -1,109 +1,148 @@
 import 'package:flutter/material.dart';
 import 'package:investra/core/styles/colors.dart';
+import '../widgets/build_icon_container.dart';
 
-class SecuritySettingsScreen extends StatefulWidget {
+class SecuritySettingsScreen extends StatelessWidget {
   const SecuritySettingsScreen({super.key});
-
-  @override
-  State<SecuritySettingsScreen> createState() => _SecuritySettingsScreenState();
-}
-
-class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
-  bool is2FAEnabled = true;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.secondary2Color,
+      backgroundColor: AppColors.bgColor,
       appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios, color: AppColors.primaryColor),
+          onPressed: () => Navigator.pop(context),
+        ),
         title: const Text(
-          "Security Settings",
+          'Help & Support',
           style: TextStyle(
             color: AppColors.primaryColor,
             fontWeight: FontWeight.bold,
           ),
         ),
-        backgroundColor: Colors.white,
-        elevation: 0,
-        iconTheme: const IconThemeData(color: AppColors.primaryColor),
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 10),
+            const Text(
+              "How can we help?",
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: AppColors.blackColor,
+              ),
+            ),
+            const SizedBox(height: 30),
+
+            const Text(
+              "Top Questions",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 10),
+            _buildFAQExpandable(
+              "How do I publish my idea?",
+              "Create an idea profile and upload the required business documents.",
+            ),
+            _buildFAQExpandable(
+              "Can investors view my documents?",
+              "Only after approval and NDA completion, if required.",
+            ),
+            _buildFAQExpandable(
+              "How does AI help investors?",
+              "AI provides idea assessments and insights to support investment decisions.",
+            ),
+            _buildFAQExpandable(
+              "Is my information secure?",
+              "Yes, Investra uses secure authentication, protected storage, and controlled document access.",
+            ),
+            const SizedBox(height: 35),
+
+            const Text(
+              "Contact Us Directly",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 15),
+            _buildContactOption(
+              icon: Icons.mail_outline_rounded,
+              title: "Email Us",
+              trailingText: "investraSupport@gmail.com",
+            ),
+            _buildContactOption(
+              icon: Icons.phone_outlined,
+              title: "Phone",
+              trailingText: "1779",
+            ),
+
+            const SizedBox(height: 30),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFAQExpandable(String question, String answer) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.primaryColor.withOpacity(0.1)),
+      ),
+      child: ExpansionTile(
+        shape: const RoundedRectangleBorder(side: BorderSide.none),
+        title: Text(
+          question,
+          style: const TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            color: AppColors.primaryColor,
+          ),
+        ),
+        iconColor: AppColors.primaryColor,
         children: [
-          _buildSecurityOption(
-            icon: Icons.phonelink_lock_rounded,
-            title: "Two-Factor Authentication",
-            subtitle: "Use an authenticator app for extra security",
-            trailing: Switch.adaptive(
-              value: is2FAEnabled,
-              activeTrackColor: AppColors.green1Color,
-              onChanged: (val) => setState(() => is2FAEnabled = val),
+          Padding(
+            padding: const EdgeInsets.only(left: 16, right: 16, bottom: 16),
+            child: Text(
+              answer,
+              style: const TextStyle(color: AppColors.darkGray, height: 1.4),
             ),
-          ),
-          const SizedBox(height: 16),
-          _buildSecurityOption(
-            icon: Icons.fingerprint_rounded,
-            title: "Biometric Login",
-            subtitle: "Use FaceID or Fingerprint to login",
-            trailing: const Icon(
-              Icons.arrow_forward_ios,
-              size: 16,
-              color: AppColors.darkGray,
-            ),
-            onTap: () {},
-          ),
-          const SizedBox(height: 16),
-          _buildSecurityOption(
-            icon: Icons.devices_rounded,
-            title: "Manage Devices",
-            subtitle: "See where you are currently logged in",
-            trailing: const Icon(
-              Icons.arrow_forward_ios,
-              size: 16,
-              color: AppColors.darkGray,
-            ),
-            onTap: () {},
           ),
         ],
       ),
     );
   }
 
-  Widget _buildSecurityOption({
+  Widget _buildContactOption({
     required IconData icon,
     required String title,
-    required String subtitle,
-    required Widget trailing,
-    VoidCallback? onTap,
+    required String trailingText,
   }) {
     return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10),
-        ],
+        borderRadius: BorderRadius.circular(12),
       ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-        leading: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: AppColors.secondary2Color,
-            shape: BoxShape.circle,
+      child: Row(
+        children: [
+          buildIconContainer(
+            icon: Icon(icon, color: AppColors.primaryColor, size: 22),
           ),
-          child: Icon(icon, color: AppColors.primaryColor),
-        ),
-        title: Text(
-          title,
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-        ),
-        subtitle: Text(
-          subtitle,
-          style: const TextStyle(fontSize: 12, color: AppColors.darkGray),
-        ),
-        trailing: trailing,
-        onTap: onTap,
+          const SizedBox(width: 15),
+          Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+          const Spacer(),
+          Text(
+            trailingText,
+            style: const TextStyle(color: AppColors.grayColor, fontSize: 13),
+          ),
+        ],
       ),
     );
   }

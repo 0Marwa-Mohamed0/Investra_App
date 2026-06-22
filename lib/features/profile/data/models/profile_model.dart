@@ -52,4 +52,23 @@ class ProfileModel {
   factory ProfileModel.fromJson(Map<String, dynamic> json, [String? userRole]) {
     return ProfileModel.fromView(json, userRole);
   }
+
+  // ✅ يسمح بتحديث الصورة/البايو من مصدر موحّد (جدول profile)
+  // بيستخدم القيمة الجديدة فقط لو موجودة وغير فاضية، وإلا بيرجع القيمة القديمة
+  ProfileModel copyWith({
+    String? profilePicture,
+    String? bio,
+  }) {
+    return ProfileModel(
+      userId: userId,
+      fullName: fullName,
+      profilePicture: (profilePicture != null && profilePicture.isNotEmpty)
+          ? profilePicture
+          : this.profilePicture,
+      bio: (bio != null && bio.isNotEmpty) ? bio : this.bio,
+      role: role,
+      totalActivity: totalActivity,
+      activeChats: activeChats,
+    );
+  }
 }

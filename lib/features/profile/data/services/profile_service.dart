@@ -7,6 +7,23 @@ class ProfileService {
 
   Future<ProfileModel?> fetchUserProfile(String userId) async {
     try {
+      // ✅ الصورة والـ bio دايماً من جدول profile الموحّد، مهما كان نوع اليوزر
+      // (Investor أو Entrepreneur) - هاد المصدر الوحيد للصورة بكل التطبيق
+      final profileResponse = await _supabase
+          .from('profile')
+          .select('profile_picture, bio')
+          .eq('userid', userId)
+          .maybeSingle();
+
+      // 🔍 Debug: شوفي بالـ console شو القيمة الراجعة فعلياً
+      debugPrint('🔍 [profile table] userId=$userId -> response=$profileResponse');
+
+      final String? unifiedPicture = profileResponse?['profile_picture'];
+      final String? unifiedBio = profileResponse?['bio'];
+
+      debugPrint('🔍 [profile table] unifiedPicture=$unifiedPicture');
+
+      // نجرب الاستثمار أولاً
       final investorResponse = await _supabase
           .from('investor_full_profile')
           .select()
@@ -14,9 +31,14 @@ class ProfileService {
           .maybeSingle();
 
       if (investorResponse != null) {
-        return ProfileModel.fromView(investorResponse, 'Investor');
+        debugPrint('🔍 Found as Investor: $userId');
+        return ProfileModel.fromView(investorResponse, 'Investor').copyWith(
+          profilePicture: unifiedPicture,
+          bio: unifiedBio,
+        );
       }
 
+      // وإلا نجرب رائد الأعمال
       final entrepreneurResponse = await _supabase
           .from('entrepreneur_full_profile')
           .select()
@@ -24,12 +46,17 @@ class ProfileService {
           .maybeSingle();
 
       if (entrepreneurResponse != null) {
-        return ProfileModel.fromView(entrepreneurResponse, 'Entrepreneur');
+        debugPrint('🔍 Found as Entrepreneur: $userId');
+        return ProfileModel.fromView(entrepreneurResponse, 'Entrepreneur').copyWith(
+          profilePicture: unifiedPicture,
+          bio: unifiedBio,
+        );
       }
 
+      debugPrint('⚠️ No profile found at all for userId=$userId');
       return null;
     } catch (e) {
-      debugPrint('Error fetching profile data: $e');
+      debugPrint('❌ Error fetching profile data: $e');
       return null;
     }
   }
@@ -67,22 +94,27 @@ class ProfileService {
     try {
       final response = await _supabase
           .from('ideas')
-          .select('idea_docs')
+          .select('business_plan_url, feasibility_study_url')
           .eq('entrepreneur_id', userId);
 
       int totalDocs = 0;
 
       if (response != null && response.isNotEmpty) {
         for (var row in response) {
-          if (row['idea_docs'] != null && row['idea_docs'] is List) {
-            final List docsList = row['idea_docs'] as List;
-            totalDocs += docsList.length;
+          final businessPlan = row['business_plan_url'];
+          final feasibilityStudy = row['feasibility_study_url'];
+
+          if (businessPlan != null && (businessPlan as String).isNotEmpty) {
+            totalDocs++;
+          }
+          if (feasibilityStudy != null && (feasibilityStudy as String).isNotEmpty) {
+            totalDocs++;
           }
         }
       }
       return totalDocs;
     } catch (e) {
-      debugPrint('Error counting entrepreneur docs from array: $e');
+      debugPrint('Error counting entrepreneur docs: $e');
       return 0;
     }
   }
