@@ -18,17 +18,14 @@ class ChatBubble extends StatelessWidget {
   final bool showPeerAvatar;
   final String? peerAvatarUrl;
   final String? peerInitial;
-  // ✅ callback لما الإنفستور يضغط Sign NDA
   final VoidCallback? onSignNda;
 
   @override
   Widget build(BuildContext context) {
-    final isOutgoing = message.isFromUser;
-
-    // ✅ لو رسالة NDA، نعرض bubble خاص
+    // ── NDA bubble ─────────────────────────────────────────────────────────
     if (message.isNda) {
       return _NdaBubble(
-        isOutgoing: isOutgoing,
+        isOutgoing: message.isFromUser,
         timeLabel: message.timeLabel,
         isRead: message.isRead,
         onSignNda: onSignNda,
@@ -38,7 +35,28 @@ class ChatBubble extends StatelessWidget {
       );
     }
 
-    // رسالة نصية عادية
+    // ── Image bubble ───────────────────────────────────────────────────────
+    if (message.messageType == 'image') {
+      return _ImageBubble(
+        message: message,
+        showPeerAvatar: showPeerAvatar,
+        peerAvatarUrl: peerAvatarUrl,
+        peerInitial: peerInitial,
+      );
+    }
+
+    // ── Document bubble ────────────────────────────────────────────────────
+    if (message.messageType == 'document') {
+      return _DocumentBubble(
+        message: message,
+        showPeerAvatar: showPeerAvatar,
+        peerAvatarUrl: peerAvatarUrl,
+        peerInitial: peerInitial,
+      );
+    }
+
+    // ── Text bubble (default) ──────────────────────────────────────────────
+    final isOutgoing = message.isFromUser;
     final theme = Theme.of(context);
 
     final bubble = ConstrainedBox(
@@ -75,27 +93,10 @@ class ChatBubble extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 4),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                message.timeLabel,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: AppColors.gray2Color,
-                  fontSize: 11,
-                ),
-              ),
-              if (isOutgoing) ...[
-                const SizedBox(width: 4),
-                Icon(
-                  message.isRead ? Icons.done_all : Icons.done,
-                  size: 16,
-                  color: message.isRead
-                      ? const Color(0xFF34B7F1)
-                      : AppColors.gray2Color,
-                ),
-              ],
-            ],
+          _TimeRow(
+            timeLabel: message.timeLabel,
+            isOutgoing: isOutgoing,
+            isRead: message.isRead,
           ),
         ],
       ),
@@ -129,6 +130,9 @@ class ChatBubble extends StatelessWidget {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// NDA BUBBLE
+// ═══════════════════════════════════════════════════════════════════════════
 
 class _NdaBubble extends StatelessWidget {
   const _NdaBubble({
@@ -177,7 +181,8 @@ class _NdaBubble extends StatelessWidget {
                 width: 1.2,
               ),
             ),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            padding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -187,7 +192,8 @@ class _NdaBubble extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.all(7),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF59E0B).withOpacity(0.15),
+                        color:
+                        const Color(0xFFF59E0B).withOpacity(0.15),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: const Icon(
@@ -217,7 +223,20 @@ class _NdaBubble extends StatelessWidget {
                     ),
                   ],
                 ),
-                // ✅ زر Sign NDA يظهر بس للإنفستور (incoming)
+                const SizedBox(height: 8),
+                // نص الرسالة
+                Text(
+                  isOutgoing
+                      ? 'You requested the investor to sign the NDA.'
+                      : 'Please review and sign the NDA agreement to proceed.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: isOutgoing
+                        ? AppColors.grayColor
+                        : AppColors.blackColor,
+                    height: 1.4,
+                  ),
+                ),
+                // زر Sign NDA للمستثمر فقط
                 if (!isOutgoing && onSignNda != null) ...[
                   const SizedBox(height: 10),
                   SizedBox(
@@ -239,12 +258,13 @@ class _NdaBubble extends StatelessWidget {
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        padding:
+                        const EdgeInsets.symmetric(vertical: 8),
                       ),
                     ),
                   ),
                 ],
-                // ✅ للإنتريبرينور يظهر "Pending signature"
+                // للـ entrepreneur: Pending
                 if (isOutgoing) ...[
                   const SizedBox(height: 8),
                   Row(
@@ -267,27 +287,10 @@ class _NdaBubble extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 4),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                timeLabel,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: AppColors.gray2Color,
-                  fontSize: 11,
-                ),
-              ),
-              if (isOutgoing) ...[
-                const SizedBox(width: 4),
-                Icon(
-                  isRead ? Icons.done_all : Icons.done,
-                  size: 16,
-                  color: isRead
-                      ? const Color(0xFF34B7F1)
-                      : AppColors.gray2Color,
-                ),
-              ],
-            ],
+          _TimeRow(
+            timeLabel: timeLabel,
+            isOutgoing: isOutgoing,
+            isRead: isRead,
           ),
         ],
       ),
@@ -321,9 +324,264 @@ class _NdaBubble extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+// IMAGE BUBBLE
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _ImageBubble extends StatelessWidget {
+  const _ImageBubble({
+    required this.message,
+    required this.showPeerAvatar,
+    this.peerAvatarUrl,
+    this.peerInitial,
+  });
+
+  final ChatMessage message;
+  final bool showPeerAvatar;
+  final String? peerAvatarUrl;
+  final String? peerInitial;
+
+  @override
+  Widget build(BuildContext context) {
+    final isOutgoing = message.isFromUser;
+
+    final bubble = ConstrainedBox(
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.sizeOf(context).width * 0.72,
+      ),
+      child: Column(
+        crossAxisAlignment:
+        isOutgoing ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.only(
+              topLeft: const Radius.circular(16),
+              topRight: const Radius.circular(16),
+              bottomLeft: Radius.circular(isOutgoing ? 16 : 4),
+              bottomRight: Radius.circular(isOutgoing ? 4 : 16),
+            ),
+            child: Image.network(
+              message.text,
+              width: 220,
+              height: 180,
+              fit: BoxFit.cover,
+              loadingBuilder: (_, child, progress) => progress == null
+                  ? child
+                  : Container(
+                width: 220,
+                height: 180,
+                color: AppColors.bgGray,
+                child: const Center(
+                    child: CircularProgressIndicator()),
+              ),
+              errorBuilder: (_, __, ___) => Container(
+                width: 220,
+                height: 180,
+                color: AppColors.bgGray,
+                child: const Icon(Icons.broken_image_outlined,
+                    color: AppColors.grayColor),
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          _TimeRow(
+            timeLabel: message.timeLabel,
+            isOutgoing: isOutgoing,
+            isRead: message.isRead,
+          ),
+        ],
+      ),
+    );
+
+    if (isOutgoing) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [bubble],
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          if (showPeerAvatar) ...[
+            _SmallAvatar(avatarUrl: peerAvatarUrl, label: peerInitial),
+            const SizedBox(width: 8),
+          ] else
+            const SizedBox(width: 36),
+          bubble,
+        ],
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DOCUMENT BUBBLE
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _DocumentBubble extends StatelessWidget {
+  const _DocumentBubble({
+    required this.message,
+    required this.showPeerAvatar,
+    this.peerAvatarUrl,
+    this.peerInitial,
+  });
+
+  final ChatMessage message;
+  final bool showPeerAvatar;
+  final String? peerAvatarUrl;
+  final String? peerInitial;
+
+  String get _fileName {
+    try {
+      final uri = Uri.parse(message.text);
+      final raw = uri.pathSegments.last;
+      // اشيل الـ timestamp من أول الاسم (مثلاً 1777930282671_roadmap.pdf)
+      return raw.replaceAll(RegExp(r'^\d+_'), '');
+    } catch (_) {
+      return 'Document';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isOutgoing = message.isFromUser;
+    final theme = Theme.of(context);
+
+    final bubble = ConstrainedBox(
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.sizeOf(context).width * 0.72,
+      ),
+      child: Column(
+        crossAxisAlignment:
+        isOutgoing ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: isOutgoing
+                  ? AppColors.primaryColor
+                  : AppColors.secondary1Color,
+              borderRadius: BorderRadius.only(
+                topLeft: const Radius.circular(16),
+                topRight: const Radius.circular(16),
+                bottomLeft: Radius.circular(isOutgoing ? 16 : 4),
+                bottomRight: Radius.circular(isOutgoing ? 4 : 16),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.insert_drive_file_outlined,
+                  color: isOutgoing
+                      ? Colors.white70
+                      : AppColors.primaryColor,
+                  size: 22,
+                ),
+                const SizedBox(width: 10),
+                Flexible(
+                  child: Text(
+                    _fileName,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: isOutgoing
+                          ? Colors.white
+                          : AppColors.blackColor,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          _TimeRow(
+            timeLabel: message.timeLabel,
+            isOutgoing: isOutgoing,
+            isRead: message.isRead,
+          ),
+        ],
+      ),
+    );
+
+    if (isOutgoing) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [bubble],
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          if (showPeerAvatar) ...[
+            _SmallAvatar(avatarUrl: peerAvatarUrl, label: peerInitial),
+            const SizedBox(width: 8),
+          ] else
+            const SizedBox(width: 36),
+          bubble,
+        ],
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // SHARED WIDGETS
-// ─────────────────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _TimeRow extends StatelessWidget {
+  const _TimeRow({
+    required this.timeLabel,
+    required this.isOutgoing,
+    required this.isRead,
+  });
+
+  final String timeLabel;
+  final bool isOutgoing;
+  final bool isRead;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          timeLabel,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: AppColors.gray2Color,
+            fontSize: 11,
+          ),
+        ),
+        if (isOutgoing) ...[
+          const SizedBox(width: 4),
+          Icon(
+            isRead ? Icons.done_all : Icons.done,
+            size: 16,
+            color: isRead
+                ? const Color(0xFF34B7F1)
+                : AppColors.gray2Color,
+          ),
+        ],
+      ],
+    );
+  }
+}
 
 class _SmallAvatar extends StatelessWidget {
   const _SmallAvatar({this.avatarUrl, this.label});
@@ -336,7 +594,8 @@ class _SmallAvatar extends StatelessWidget {
     return CircleAvatar(
       radius: 16,
       backgroundColor: AppColors.bgGray,
-      backgroundImage: avatarUrl != null ? NetworkImage(avatarUrl!) : null,
+      backgroundImage:
+      avatarUrl != null ? NetworkImage(avatarUrl!) : null,
       child: avatarUrl == null
           ? Text(
         (label != null && label!.isNotEmpty)
@@ -399,7 +658,8 @@ class ChatDatePill extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 16),
       child: Center(
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          padding:
+          const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
             color: AppColors.bgGray,
             borderRadius: BorderRadius.circular(20),

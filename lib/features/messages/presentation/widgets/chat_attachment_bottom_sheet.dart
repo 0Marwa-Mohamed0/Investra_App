@@ -1,8 +1,12 @@
+import 'dart:io';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:investra/core/styles/colors.dart';
+import 'package:investra/features/messages/data/chat_supabase_service.dart';
 import 'package:investra/features/messages/presentation/pages/nda_screen.dart';
+import 'package:investra/features/messages/presentation/widgets/message_input_bar.dart';
 
 class ChatAttachmentBottomSheet extends StatelessWidget {
   const ChatAttachmentBottomSheet({
@@ -16,8 +20,11 @@ class ChatAttachmentBottomSheet extends StatelessWidget {
   final Future<void> Function() onImageTap;
   final Future<void> Function() onNdaTap;
 
-  // ✅ الآن بتستقبل chatId وتمرره لـ NdaScreen
-  static Future<void> show(BuildContext context, {required String chatId}) {
+  static Future<void> show(
+      BuildContext context, {
+        required String chatId,
+        required void Function(PendingAttachment) onAttachmentPicked,
+      }) {
     return showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
@@ -26,58 +33,87 @@ class ChatAttachmentBottomSheet extends StatelessWidget {
         return ChatAttachmentBottomSheet(
           onDocumentTap: () async {
             Navigator.of(sheetContext).pop();
-            await pickDocument(context);
+            final attachment = await _pickDocument(context);
+            if (attachment != null) onAttachmentPicked(attachment);
           },
           onImageTap: () async {
             Navigator.of(sheetContext).pop();
-            await _pickImageFromGallery(context);
+            final attachment = await _pickImage(context);
+            if (attachment != null) onAttachmentPicked(attachment);
           },
           onNdaTap: () async {
             Navigator.of(sheetContext).pop();
-            // ✅ فتح NdaScreen وتمرير الـ chatId
-            await Navigator.of(context).push<bool>(
-              MaterialPageRoute(
-                builder: (_) => NdaScreen(chatId: chatId),
-              ),
-            );
+
+            final service = ChatSupabaseService();
+            final isEntrepreneur = await service.isEntrepreneur();
+            if (!context.mounted) return;
+
+            if (isEntrepreneur) {
+              try {
+                await service.sendNdaRequest(chatId: chatId);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('NDA request sent to investor ✓'),
+                      backgroundColor: AppColors.primaryColor,
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Failed to send NDA: $e'),
+                      backgroundColor: Colors.red,
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+              }
+            } else {
+              await Navigator.of(context).push<bool>(
+                MaterialPageRoute(
+                  builder: (_) => NdaScreen(chatId: chatId),
+                ),
+              );
+            }
           },
         );
       },
     );
   }
 
-  /// Shared document picker
-  static Future<void> pickDocument(
-      BuildContext context, {
-        void Function(String fileName)? onFilePicked,
-      }) async {
-    final result = await FilePicker.platform.pickFiles();
-    if (result == null || result.files.isEmpty) return;
-
-    final selectedFile = result.files.single;
-    if (!context.mounted) return;
-
-    onFilePicked?.call(selectedFile.name);
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Selected document: ${selectedFile.name}'),
-        behavior: SnackBarBehavior.floating,
-      ),
+  static Future<PendingAttachment?> _pickImage(BuildContext context) async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
     );
+    if (picked == null) return null;
+    return PendingAttachment.image(file: File(picked.path));
   }
 
-  static Future<void> _pickImageFromGallery(BuildContext context) async {
-    final picker = ImagePicker();
-    final image = await picker.pickImage(source: ImageSource.gallery);
-    if (image == null) return;
-    if (!context.mounted) return;
+  static Future<PendingAttachment?> _pickDocument(BuildContext context) async {
+    final result = await FilePicker.platform.pickFiles(withData: true);
+    if (result == null || result.files.isEmpty) return null;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Selected image: ${image.name}'),
-        behavior: SnackBarBehavior.floating,
-      ),
+    final file = result.files.single;
+    if (file.bytes == null) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not read file'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return null;
+    }
+
+    return PendingAttachment.document(
+      bytes: file.bytes!,
+      fileName: file.name,
     );
   }
 
@@ -139,7 +175,7 @@ class ChatAttachmentBottomSheet extends StatelessWidget {
                 _AttachmentActionTile(
                   icon: Icons.assignment_outlined,
                   title: 'Contract (NDA)',
-                  subtitle: 'Share NDA details',
+                  subtitle: 'Send NDA request to investor',
                   iconColor: const Color(0xFFF59E0B),
                   tileColor: tileColor,
                   titleColor: titleColor,

@@ -226,7 +226,7 @@ class _MessagesListScreenState extends State<MessagesListScreen> {
                           builder: (_) => ChatScreen(user: c),
                         ),
                       );
-                      // ✅ بعد الرجوع مباشرة → أعد التحميل
+
                       _loadChats();
                     },
                   );

@@ -1,3 +1,6 @@
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:investra/features/messages/domain/entities/chat_contact.dart';
 import 'package:investra/features/messages/domain/entities/chat_message.dart';
@@ -58,11 +61,23 @@ class ChatSupabaseService {
           (a['time stamp'] ?? '').compareTo(b['time stamp'] ?? ''));
 
       final lastMsg = msgs.isNotEmpty ? msgs.last : null;
-      final String preview = lastMsg == null
-          ? '...'
-          : (lastMsg['message_type'] == 'nda'
-          ? '📄 NDA Agreement'
-          : lastMsg['Message text'] ?? '...');
+
+      String preview = '...';
+      if (lastMsg != null) {
+        switch (lastMsg['message_type']) {
+          case 'nda':
+            preview = '📄 NDA Agreement';
+            break;
+          case 'image':
+            preview = '📷 Image';
+            break;
+          case 'document':
+            preview = '📎 Document';
+            break;
+          default:
+            preview = lastMsg['Message text'] ?? '...';
+        }
+      }
 
       const int unreadCount = 0;
 
@@ -117,7 +132,7 @@ class ChatSupabaseService {
     }).toList();
   }
 
-
+  // ── 3. بعت رسالة نصية ────────────────────────────────────────────────────
   Future<void> sendMessage({
     required String chatId,
     required String text,
@@ -131,18 +146,67 @@ class ChatSupabaseService {
     });
   }
 
-
+  // ── 4. بعت طلب NDA ───────────────────────────────────────────────────────
+  // الـ entrepreneur بيستخدم هاد — بيبعت رسالة للمستثمر يطلب منه يوقع
   Future<void> sendNdaRequest({required String chatId}) async {
     await _sb.from('message').insert({
       'chat_id': chatId,
       'sender_id': _myId,
-      'Message text': 'NDA_REQUEST',
+      'Message text':
+      'Please review and sign the NDA agreement to proceed with viewing the project details.',
       'is read': false,
       'message_type': 'nda',
     });
   }
 
+  // ── 5. رفع صورة وبعتها ───────────────────────────────────────────────────
+  Future<void> sendImage({
+    required String chatId,
+    required File imageFile,
+  }) async {
+    final ext = imageFile.path.split('.').last;
+    final fileName = '${DateTime.now().millisecondsSinceEpoch}_$_myId.$ext';
 
+    await _sb.storage.from('chat_files').upload(fileName, imageFile);
+
+    final publicUrl =
+    _sb.storage.from('chat_files').getPublicUrl(fileName);
+
+    await _sb.from('message').insert({
+      'chat_id': chatId,
+      'sender_id': _myId,
+      'Message text': publicUrl,
+      'is read': false,
+      'message_type': 'image',
+    });
+  }
+
+  // ── 6. رفع ملف وبعته ─────────────────────────────────────────────────────
+  Future<void> sendDocument({
+    required String chatId,
+    required Uint8List bytes,
+    required String fileName,
+  }) async {
+    final storageName =
+        '${DateTime.now().millisecondsSinceEpoch}_$fileName';
+
+    await _sb.storage
+        .from('chat_files')
+        .uploadBinary(storageName, bytes);
+
+    final publicUrl =
+    _sb.storage.from('chat_files').getPublicUrl(storageName);
+
+    await _sb.from('message').insert({
+      'chat_id': chatId,
+      'sender_id': _myId,
+      'Message text': publicUrl,
+      'is read': false,
+      'message_type': 'document',
+    });
+  }
+
+  // ── 7. علّم الرسائل كمقروءة ──────────────────────────────────────────────
   Future<void> markMessagesAsRead(String chatId) async {
     await _sb
         .from('message')
@@ -152,7 +216,7 @@ class ChatSupabaseService {
         .eq('is read', false);
   }
 
-
+  // ── 8. Stream رسائل شات معين ─────────────────────────────────────────────
   Stream<List<Map<String, dynamic>>> streamMessages(String chatId) {
     return _sb
         .from('message')
@@ -161,17 +225,17 @@ class ChatSupabaseService {
         .order('time stamp', ascending: true);
   }
 
-
+  // ── 9. Stream كل الرسائل (للـ messages list) ─────────────────────────────
   Stream<List<Map<String, dynamic>>> streamAllMessages() {
     return _sb.from('message').stream(primaryKey: ['messageid']);
   }
 
-
+  // ── 10. جيب أو اعمل شات ──────────────────────────────────────────────────
   Future<String> getOrCreateChat({
     required String otherUserId,
     required String ideaId,
   }) async {
-    final iAmEntrepreneur = await _isEntrepreneur();
+    final iAmEntrepreneur = await isEntrepreneur();
     final entrepreneurId = iAmEntrepreneur ? _myId : otherUserId;
     final investorId = iAmEntrepreneur ? otherUserId : _myId;
 
@@ -198,8 +262,8 @@ class ChatSupabaseService {
     return created['chat_id'];
   }
 
-
-  Future<bool> _isEntrepreneur() async {
+  // ── 11. تحقق من الـ role ──────────────────────────────────────────────────
+  Future<bool> isEntrepreneur() async {
     final row = await _sb
         .from('User')
         .select('role')
@@ -208,6 +272,7 @@ class ChatSupabaseService {
     return row?['role'] == 'Entrepreneur';
   }
 
+  // ── Helper: format time ───────────────────────────────────────────────────
   String _formatTime(DateTime dt) {
     final now = DateTime.now();
     final diff = now.difference(dt);

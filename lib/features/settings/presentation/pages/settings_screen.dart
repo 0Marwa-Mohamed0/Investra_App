@@ -7,6 +7,7 @@ import 'package:investra/core/styles/colors.dart';
 import 'package:investra/core/constants/app_images.dart';
 import 'package:investra/features/notifications/presentation/pages/notifications_screen.dart';
 import 'package:investra/features/auth/presentation/pages/login_screen.dart';
+import 'security_settings_screen.dart';
 
 
 import 'change_password_screen.dart';
@@ -169,9 +170,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
           automaticallyImplyLeading: false,
           backgroundColor: AppColors.bgColor,
           elevation: 0,
-          title: const Text(' INVESTRA', style: TextStyle(color: AppColors.primaryColor, fontSize: 24, fontWeight: FontWeight.bold)),
+          centerTitle: false,
+          title: const Text('Investra', style: TextStyle(color: AppColors.primaryColor, fontSize: 24, fontWeight: FontWeight.bold)),
           actions: [
             _buildNotificationIcon(),
+            const SizedBox(width: 4),
+            IconButton(
+              constraints: const BoxConstraints(),
+              padding: EdgeInsets.zero,
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const SecuritySettingsScreen()),
+                );
+              },
+              icon: const Icon(Icons.help_outline_rounded, color: AppColors.primaryColor, size: 26),
+            ),
+            const SizedBox(width: 12),
+            _buildSmallProfileAvatar(),
             const SizedBox(width: 16),
           ],
         ),
@@ -215,17 +231,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
 
                 const SizedBox(height: 24),
-
-
-                const BuildSectionTitle(title: 'PREFERENCES'),
-                CustomSettingsToggle(
-                  icon: const Icon(Icons.notifications_active_outlined, color: AppColors.primaryColor),
-                  title: 'Push Notifications',
-                  subtitle: 'Alerts for your account activity',
-                  value: true,
-                  onChanged: (val) {},
-                ),
-
                 const SizedBox(height: 40),
 
 
@@ -278,6 +283,48 @@ class _SettingsScreenState extends State<SettingsScreen> {
       },
       icon: const Icon(Icons.logout, color: AppColors.errorColor),
       label: const Text("Sign Out", style: TextStyle(color: AppColors.errorColor, fontWeight: FontWeight.bold)),
+    );
+  }
+
+  Future<void> _viewProfileImage() {
+    return showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(20),
+        child: Stack(
+          alignment: Alignment.topRight,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: _profileImageUrl != null
+                  ? Image.network(_profileImageUrl!, fit: BoxFit.contain)
+                  : Image.asset('assets/images/profile.png', fit: BoxFit.contain),
+            ),
+            IconButton(
+              icon: const Icon(Icons.close, color: Colors.white, size: 30),
+              onPressed: () => Navigator.pop(context),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSmallProfileAvatar() {
+    return GestureDetector(
+      onTap: _viewProfileImage,
+      child: Container(
+        width: 35,
+        height: 35,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: AppColors.primaryColor.withOpacity(0.1), width: 1),
+          image: _profileImageUrl != null
+              ? DecorationImage(image: NetworkImage(_profileImageUrl!), fit: BoxFit.cover)
+              : const DecorationImage(image: AssetImage('assets/images/profile.png'), fit: BoxFit.cover),
+        ),
+      ),
     );
   }
 }
